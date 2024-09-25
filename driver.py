@@ -44,11 +44,8 @@ def throttle(target_fps, start_time):
         return False
     
 def read_frames(cap: cv2.VideoCapture, shmem_name: str, cur_frame_idx: mp.Value, target_fps: int):
-    # Test
-    
     existing_shm = SharedMemory(name=shmem_name)
     shared_array = np.ndarray((height, width, 3), dtype=np.uint8, buffer=existing_shm.buf)
-
 
     _ = cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
     total_frames = 0
@@ -69,7 +66,7 @@ def read_frames(cap: cv2.VideoCapture, shmem_name: str, cur_frame_idx: mp.Value,
 
 def filter_frames(diff_processor, shmem_name: str, cur_frame_idx: mp.Value, encoding_queue: mp.Queue, width: int, height: int):
     # _, prev_frame = current_frame_queue.get()
-    sleep(0.5)
+    sleep(0.01) # Some time for first frame to be written to shared memory
     existing_shm = SharedMemory(name=shmem_name)
     shared_array = np.ndarray((height, width, 3), dtype=np.uint8, buffer=existing_shm.buf)
 
@@ -83,17 +80,15 @@ def filter_frames(diff_processor, shmem_name: str, cur_frame_idx: mp.Value, enco
             # frame = np.frombuffer(cur_frame.get_obj(), dtype=np.uint8).reshape((height, width, 3))
             frame = shared_array.copy()
             frame_idx = cur_frame_idx.value
-            # print(f'Filter: frame_idx, {frame_idx}')
             if frame_idx == -1:
+                cur_frame_idx.value = 0
                 encoding_queue.put((None, None))
                 break
         feat = diff_processor.get_frame_feature(frame)
         dis = diff_processor.cal_frame_diff(feat, prev_feat)
-        # print(f'Filter: dis, {dis}')
 
         if dis > diff_processor.thresh:
             prev_feat = feat
-            print('========= Put Frame ===========')
             encoding_queue.put((frame_idx, frame))
 
 def encode_frames(encoding_queue: mp.Queue, bitrate, fps, width, height, save_dir):
@@ -103,9 +98,7 @@ def encode_frames(encoding_queue: mp.Queue, bitrate, fps, width, height, save_di
 
     while True:
         frame_idx, frame = encoding_queue.get()
-        print(type(frame_idx), type(frame))
-        print(f'Encode: ====== Received frame ========')
-        # print(frame)
+        print(f'Encode: Saving frame {frame_idx}')
         if frame is None:
             break
         frame_cpy = frame.copy()
@@ -115,10 +108,7 @@ def encode_frames(encoding_queue: mp.Queue, bitrate, fps, width, height, save_di
 
         # Save raw image
         filename = os.path.join(save_dir, f'frame{frame_idx}.npy')
-        with open(filename, 'wb') as file:
-            np.save(filename, decoded_frame)
-    print('out of loop')
-
+        np.save(filename, decoded_frame)
 
 def generate_ground_truth(cap, width, height, bitrate, fps, save_dir):
     os.makedirs(save_dir, exist_ok=True)
@@ -188,7 +178,7 @@ def class2str(cls):
     else:
         raise Exception('Unknown class')
     
-def read_energy(TC66, out_file, start, interval=1):
+def read_energy(TC66, out_file, start, energy_readings, interval=1):
     with open(out_file,'w') as f:
         f.write('Time[S],Volt[V],Current[A],Power[W]\n')
 
@@ -202,16 +192,28 @@ def read_energy(TC66, out_file, start, interval=1):
                 pd.Power)
             f.write(s+'\n')
 
+            energy_readings.put(pd.Power)
+
             print(s)
             elapsed = (monotonic()-start) - now
             if elapsed < interval:
                 sleep(interval - elapsed)
 
+def get_average_energy(energy_readings):
+    power_sum = 0
+    num_readings = energy_readings.qsize()
+    print(f'Number of energy readings: {num_readings}')
+
+    for _ in range(num_readings):
+        power_sum += energy_readings.get()
+    
+    return power_sum / num_readings if num_readings > 0 else 0
+
 if __name__ == '__main__':
     print('Running')
 
     LOG_FILE = './timestamps.csv'
-    VIDEO = '../distributed-360-streaming/videos/ny_driving.nut'
+    VIDEO = './videos/ny_driving.nut'
     FREQUENCIES = [1500000, 1800000, 2100000, 2400000]
     FILTERS = [PixelDiff, AreaDiff, EdgeDiff]
     # Batch 1: [0.1, 0.2, 0.3]
@@ -237,68 +239,68 @@ if __name__ == '__main__':
 
     total_exp_start_time = monotonic()
 
-    mp.Process(target=read_energy, args=(TC66,
-                                      'TC66_'+strftime('%Y%m%d%H%M%S',localtime())+'.csv',
-                                      total_exp_start_time)).start()
-
     cur_frame_idx = mp.Value('i')
     shm = SharedMemory(create=True, size=height*width*3)
     encoding_queue = mp.Queue()
+    energy_readings = mp.Queue()
 
-    gt_dir = os.path.join(os.path.dirname(__file__), 'ground-truth')
-    generate_ground_truth(cap, width, height, 3000, 30, gt_dir)
+    mp.Process(target=read_energy, args=(TC66,
+                                      'TC66_'+strftime('%Y%m%d%H%M%S',localtime())+'.csv',
+                                      total_exp_start_time, energy_readings),
+                                      kwargs = {'interval': 0.25}).start()
 
-    for frequency in [1500000]:
+    # gt_dir = os.path.join(os.path.dirname(__file__), 'ground-truth')
+    # generate_ground_truth(cap, width, height, 3000, 30, gt_dir)
 
-        set_cpu_freq(frequency)
+    try:
+        for frequency in [2100000]:
 
-        for filter in [PixelDiff]:
-            for threshold in THRESHOLDS:
+            set_cpu_freq(frequency)
 
-                diff_processor = filter(thresh=threshold)
+            for filter in [AreaDiff]:
+                for threshold in THRESHOLDS:
 
-                for frame_bitrate in FRAME_BITRATES:
-                    bitrate = frame_bitrate * fps
-                    # encoder.change_settings(bitrate, fps)
-                    save_dir = os.path.join(os.path.dirname(__file__), f'{frequency / 1_000_000}-{class2str(filter)}-{threshold}-{frame_bitrate}')
-                    os.makedirs(save_dir, exist_ok=True)
+                    diff_processor = filter(thresh=threshold)
 
-                    cur_exp_start_time = monotonic()
+                    for frame_bitrate in FRAME_BITRATES:
+                        bitrate = frame_bitrate * fps
+                        save_dir = os.path.join(os.path.dirname(__file__), f'{frequency / 1_000_000}-{class2str(filter)}-{threshold}-{frame_bitrate}')
+                        os.makedirs(save_dir, exist_ok=True)
 
-                    # num_frames = encode_video(cap, diff_processor, encoder, decoder, save_dir, target_fps, total_exp_start_time)
-                    read_frames_pid = mp.Process(target=read_frames, args=(cap, shm.name, cur_frame_idx, target_fps))
-                    filter_frames_pid = mp.Process(target=filter_frames, args=(diff_processor, shm.name, cur_frame_idx, encoding_queue, width, height))
-                    encode_frames_pid = mp.Process(target=encode_frames, args=(encoding_queue, bitrate, fps, width, height, save_dir))
+                        cur_exp_start_time = monotonic()
 
-                    read_frames_pid.start()
-                    filter_frames_pid.start()
-                    # ret, frame = cap.read()
-                    # encoding_queue.put((0, frame))
-                    encode_frames_pid.start()
+                        # num_frames = encode_video(cap, diff_processor, encoder, decoder, save_dir, target_fps, total_exp_start_time)
+                        read_frames_pid = mp.Process(target=read_frames, args=(cap, shm.name, cur_frame_idx, target_fps))
+                        filter_frames_pid = mp.Process(target=filter_frames, args=(diff_processor, shm.name, cur_frame_idx, encoding_queue, width, height))
+                        encode_frames_pid = mp.Process(target=encode_frames, args=(encoding_queue, bitrate, fps, width, height, save_dir))
 
-                    try:
+                        get_average_energy(energy_readings) # Clear out readings collected before experiment
+
+                        read_frames_pid.start()
+                        filter_frames_pid.start()
+                        encode_frames_pid.start()
+
                         read_frames_pid.join()
                         filter_frames_pid.join()
                         encode_frames_pid.join()
-                    except KeyboardInterrupt:
-                        read_frames_pid.terminate()
-                        filter_frames_pid.terminate()
-                        encode_frames_pid.terminate()
-                    finally:
-                        # Clean up shared memory
-                        shm.close()
-                        shm.unlink()
 
+                        cur_exp_end_time = monotonic()
+                        tot_time = cur_exp_end_time - cur_exp_start_time
+                        average_energy = get_average_energy(energy_readings)
 
-                    cur_exp_end_time = monotonic()
-                    tot_time = cur_exp_end_time - cur_exp_start_time
+                        with open(LOG_FILE, mode='a') as file:
+                                freq_ghz = frequency / 1_000_000
+                                filter_str = class2str(filter)
+                                start_time = cur_exp_start_time - total_exp_start_time
+                                end_time = cur_exp_end_time - total_exp_start_time
 
-                    with open(LOG_FILE, mode='a') as file:
-                            freq_ghz = frequency / 1_000_000
-                            filter_str = class2str(filter)
-                            start_time = cur_exp_start_time - total_exp_start_time
-                            end_time = cur_exp_end_time - total_exp_start_time
+                                file.write(f'{freq_ghz},{filter_str},{threshold},{frame_bitrate},{fps:.3f},{start_time:.3f},{end_time:.3f},{average_energy}\n')
 
-                            file.write(f'{freq_ghz},{filter_str},{threshold},{frame_bitrate},{fps:.3f},{start_time:.3f},{end_time:.3f}\n')
-
-                    sleep(2)
+                        sleep(10)
+    except Exception as e:
+        with open('errors.out', 'a') as f:
+            f.write(e)
+    finally:
+        # Clean up shared memory
+        shm.close()
+        shm.unlink()
