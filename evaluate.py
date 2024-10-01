@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 import torch.cuda
+import time
 
 def iou(box1, box2):
     """
@@ -69,16 +70,15 @@ def sort_nicely( l ):
     return sorted(l, key=alphanum_key)
 
 def name2index(frame_name):
-    return int(frame_name.split('.')[0].split('_')[1])
+    return int(frame_name[5:-4])
 
 def calculate_accuracy(ground_truth_dir, eval_dir):
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = YOLO(os.path.join(PATH_STEM, '..', 'yolov8x.pt')).to(device)
+    model = YOLO(os.path.join(os.path.dirname(__file__), 'yolov8x.pt')).to(device)
     
     eval_dir_idx = 0
     eval_dir_list = sort_nicely(os.listdir(eval_dir))
 
-    allframes_iou = np.zeros_like(os.listdir(ground_truth_dir), dtype=float)
     eval_iou = np.zeros_like(os.listdir(ground_truth_dir), dtype=float)
 
     eval_result = None
@@ -98,7 +98,6 @@ def calculate_accuracy(ground_truth_dir, eval_dir):
         
         print(frame_idx, name2index(eval_dir_list[eval_dir_idx]))
 
-        # gt_frame = cv2.imread(os.path.join(ground_truth_dir, frame_name))
         gt_frame = np.load(os.path.join(ground_truth_dir, frame_name))
         ground_truth_result = model.predict(gt_frame, verbose=False)
         allframes_result = model.predict(gt_frame, verbose=False)
@@ -107,18 +106,39 @@ def calculate_accuracy(ground_truth_dir, eval_dir):
             # Use first frame for eval if we haven't predicted yet
             eval_result = allframes_result
 
-        allframes_iou[i] = frame_iou(ground_truth_result[0].boxes, allframes_result[0].boxes)
         eval_iou[i] = frame_iou(ground_truth_result[0].boxes, eval_result[0].boxes)
 
-    return eval_iou, allframes_iou
+    return eval_iou
 
 if __name__ == '__main__':
-    PATH_STEM = os.path.dirname(__file__)
-    GROUND_TRUTH_DIR = 'ny_driving/30fps'
-    EVAL_DIR = 'ny_driving/25fps'
-    ecostream_iou, allframes_iou = calculate_accuracy(os.path.join(PATH_STEM, GROUND_TRUTH_DIR), os.path.join(PATH_STEM, EVAL_DIR))
+    IMAGE_DIR = os.path.join(os.path.dirname(__file__), 'filter-images')
+    GROUND_TRUTH_DIR = f'{os.path.dirname(__file__)}/filter-images/ground-truth'
+    LOG_FILE = f'{os.path.dirname(__file__)}/accuracy-{time.time()}.csv'
+    # ecostream_iou, allframes_iou = calculate_accuracy(os.path.join(PATH_STEM, GROUND_TRUTH_DIR), os.path.join(PATH_STEM, EVAL_DIR))
+
+    print(IMAGE_DIR)
+    with open(LOG_FILE, mode='w') as file:
+        file.write('Frequency,Filter,Threshold,Frame Bitrate,Average IoU\n')
+
+    batch_names = ['1.5', '1.8', '2.1', '2.4']
+
+    # for batch_name in batch_names:
+    #     BATCH_DIR = os.path.join(IMAGE_DIR, batch_name)
+    for batch_name in ['2.4']:
+        BATCH_DIR = os.path.join(IMAGE_DIR, '2.4', 'edge')
+
+        for img_directory in sort_nicely(os.listdir(BATCH_DIR)):
+
+            img_path = os.path.join(BATCH_DIR, img_directory)
+
+            if os.path.isdir(img_path):
+                print(img_directory)
+                iou_ = calculate_accuracy(GROUND_TRUTH_DIR, img_path)
+                print(f'Batch {batch_name}: {img_directory} IoU: {round(iou_.mean(), 4)}')
+                with open(LOG_FILE, mode='a') as file:
+                    freq, filter, thresh, bitrate = img_directory.split('-')
+                    file.write(f'{freq},{filter},{thresh},{bitrate},{iou_.mean():.4f}\n')
+            
     
-    print(f'Ecostream IoU by frame: {ecostream_iou.reshape(-1, 1)}')
-    print(f'All frames IoU by frame: {allframes_iou.reshape(-1, 1)}')
-    print(f'EcoStream IoU: {round(ecostream_iou.mean(), 4)}')
-    print(f'Sending all frames IoU: {round(allframes_iou.mean(), 4)}')
+    # print(f'Ecostream IoU by frame: {ecostream_iou.reshape(-1, 1)}')
+    # print(f'EcoStream IoU: {round(ecostream_iou.mean(), 4)}')
