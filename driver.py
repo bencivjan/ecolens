@@ -11,6 +11,7 @@ from queue import Full
 from diff_processor import PixelDiff, AreaDiff, EdgeDiff
 from ffenc_uiuc.h264_encoder import ffenc, ffdec
 from TC66C import TC66C
+import copy
 
 # Scaling governor must be set to userspace
 # `sh -c 'sudo cpufreq-set -g userspace'`
@@ -125,9 +126,9 @@ def filter_frames(diff_processor, filter_shmem_name: str, filter_frame_idx: mp.V
                 encoding_shared_array[:,:,:] = frame
             filter_output_set.add(frame_idx)
 
-def encode_frames(encoding_shmem_name: str, encoding_frame_idx: mp.Value, bitrate: int, fps: int, width: int, height: int, save_dir: str, frame_drop: mp.Queue):
+def encode_frames(encoding_shmem_name: str, encoding_frame_idx: mp.Value, bitrate: int, fps: int, width: int, height: int, save_queue: mp.Queue, frame_drop: mp.Queue):
     encoder = ffenc(width, height, fps)
-    decoder = ffdec()
+    # decoder = ffdec()
     encoder.change_settings(bitrate, fps)
 
     encoding_shm = SharedMemory(name=encoding_shmem_name)
@@ -145,6 +146,8 @@ def encode_frames(encoding_shmem_name: str, encoding_frame_idx: mp.Value, bitrat
         if enc_frame_idx == -1:
             frame_drop.put(encoded_frames_set)
             encoding_frame_idx.value = -2
+            save_queue.put((None, None))
+            print(f'save_queue size: {save_queue.qsize()}')
             return
         elif prev_frame_idx == enc_frame_idx:
             sleep(0.01)
@@ -152,14 +155,19 @@ def encode_frames(encoding_shmem_name: str, encoding_frame_idx: mp.Value, bitrat
         prev_frame_idx = enc_frame_idx
         # print(f'Encode: Saving frame {enc_frame_idx}')
         encoded_frame = encoder.process_frame(frame)
-        decoded_frame = decoder.process_frame(encoded_frame)
-        decoded_frame = cv2.cvtColor(decoded_frame, cv2.COLOR_RGB2BGR)
+        print(f'Putting frame {enc_frame_idx}')
+        save_queue.put((encoded_frame.tobytes(), enc_frame_idx))
+
+        # decoded_frame = decoder.process_frame(encoded_frame)
+        # decoded_frame = cv2.cvtColor(decoded_frame, cv2.COLOR_RGB2BGR)
 
         encoded_frames_set.add(enc_frame_idx)
 
         # Save raw image
-        filename = os.path.join(save_dir, f'frame{enc_frame_idx}.npy')
-        np.save(filename, decoded_frame)
+        # filename = os.path.join(save_dir, f'frame{enc_frame_idx}.npy')
+        # np.save(filename, decoded_frame)
+        # filename = os.path.join(save_dir, f'frame{enc_frame_idx}.jpg')
+        # cv2.imwrite(filename, decoded_frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
 
 def generate_ground_truth(cap, width, height, bitrate, fps, save_dir):
     os.makedirs(save_dir, exist_ok=True)
@@ -179,10 +187,10 @@ def generate_ground_truth(cap, width, height, bitrate, fps, save_dir):
         decoded_frame = decoder.process_frame(encoded_frame)
         decoded_frame = cv2.cvtColor(decoded_frame, cv2.COLOR_RGB2BGR)
 
-        filename = os.path.join(save_dir, f'frame{frame_idx}.npy')
-        # with open(filename, 'wb') as file:
-        #     file.write(decoded_frame.tobytes())
-        np.save(filename, decoded_frame)
+        # filename = os.path.join(save_dir, f'frame{frame_idx}.npy')
+        # np.save(filename, decoded_frame)
+        filename = os.path.join(save_dir, f'frame{frame_idx}.jpg')
+        cv2.imwrite(filename, decoded_frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
         frame_idx += 1
 
 def class2str(cls):
@@ -275,11 +283,11 @@ if __name__ == '__main__':
                                       kwargs = {'out_file': None,
                                                 'interval': 0.25}).start()
 
-    # gt_dir = os.path.join(os.path.dirname(__file__), 'ground-truth')
+    # gt_dir = os.path.join(os.path.dirname(__file__), 'ground-truth-jpg')
     # generate_ground_truth(cap, width, height, 3000, 30, gt_dir)
 
     try:
-        for frequency in [1800000]:
+        for frequency in [2400000]:
 
             set_cpu_freq(frequency)
 
@@ -291,11 +299,12 @@ if __name__ == '__main__':
             filter_frame_idx.value = -2
             encoding_frame_idx.value = -2
 
+            save_queue = mp.Queue() # Encoded frames to save
             return_values = mp.Queue()
             frame_drop = mp.Queue() # For frame index sets at each step
 
             for filter in FILTERS:
-            # for filter in [AreaDiff]:
+            # for filter in [PixelDiff, AreaDiff]:
 
                 if filter == PixelDiff:
                     thresholds = PIXEL_THRESHOLDS
@@ -312,9 +321,9 @@ if __name__ == '__main__':
                     diff_processor = filter(thresh=threshold)
 
                     for frame_bitrate in FRAME_BITRATES:
-                    # for frame_bitrate in [3000] * 2:
+                    # for frame_bitrate in [3000]:
                         bitrate = frame_bitrate * fps
-                        save_dir = os.path.join(os.path.dirname(__file__), 'flashdrive', f'{frequency / 1_000_000}-{class2str(filter)}-{threshold:.4f}-{frame_bitrate}')
+                        save_dir = os.path.join(os.path.dirname(__file__), 'flashdrive', f'{frequency / 1_000_000}', f'{frequency / 1_000_000}-{class2str(filter)}-{threshold:.4f}-{frame_bitrate}')
                         # save_dir = os.path.join('/home', 'bencivjan', 'Desktop', 'flashdrive', 'batch1', f'{frequency / 1_000_000}-{class2str(filter)}-{threshold}-{frame_bitrate}')
                         os.makedirs(save_dir, exist_ok=True)
 
@@ -323,7 +332,7 @@ if __name__ == '__main__':
                         # num_frames = encode_video(cap, diff_processor, encoder, decoder, save_dir, target_fps, total_exp_start_time)
                         read_frames_pid = mp.Process(target=read_frames, args=(cap, filter_shm.name, filter_frame_idx, target_fps, return_values, frame_drop))
                         filter_frames_pid = mp.Process(target=filter_frames, args=(diff_processor, filter_shm.name, filter_frame_idx, encoding_shm.name, encoding_frame_idx,  width, height, frame_drop))
-                        encode_frames_pid = mp.Process(target=encode_frames, args=(encoding_shm.name, encoding_frame_idx, bitrate, fps, width, height, save_dir, frame_drop))
+                        encode_frames_pid = mp.Process(target=encode_frames, args=(encoding_shm.name, encoding_frame_idx, bitrate, fps, width, height, save_queue, frame_drop))
 
                         get_average_energy(energy_readings) # Clear out readings collected before experiment
 
@@ -331,8 +340,16 @@ if __name__ == '__main__':
                         filter_frames_pid.start()
                         encode_frames_pid.start()
 
+                        # Save frames
+                        frame, idx = save_queue.get()
+                        while frame is not None:
+                            frame, idx = save_queue.get()
+                            print(f'Saving frame {idx}')
+                            filename = os.path.join(save_dir, f'frame{idx}.npy')
+                            np.save(filename, frame)
+
                         read_frames_pid.join()
-                        filter_frames_pid.join()
+                        filter_frames_pid.join()    
                         encode_frames_pid.join()
 
                         real_fps = return_values.get()
