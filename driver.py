@@ -346,7 +346,9 @@ if __name__ == '__main__':
                             frame, idx = save_queue.get()
                             print(f'Saving frame {idx}')
                             filename = os.path.join(save_dir, f'frame{idx}.npy')
-                            np.save(filename, frame)
+                            # np.save(filename, frame)
+                            with open(filename, mode='wb') as file:
+                                file.write(frame)
 
                         read_frames_pid.join()
                         filter_frames_pid.join()    

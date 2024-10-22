@@ -5,6 +5,7 @@ import numpy as np
 from ultralytics import YOLO
 import torch.cuda
 import time
+from ffenc_uiuc.h264_encoder import ffdec
 
 def iou(box1, box2):
     """
@@ -72,9 +73,18 @@ def sort_nicely( l ):
 def name2index(frame_name):
     return int(frame_name[5:-4])
 
+def decode_from_path(decoder, dir, name):
+    # enc_frame = np.load(os.path.join(dir, name)).astype(np.uint8)
+    with open(os.path.join(dir, name), 'rb') as f:
+        byte_data = f.read()
+    enc_frame = np.frombuffer(byte_data, dtype=np.uint8)
+    return decoder.process_frame(enc_frame)
+
 def calculate_accuracy(ground_truth_dir, eval_dir):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = YOLO(os.path.join(os.path.dirname(__file__), 'yolov8x.pt')).to(device)
+
+    decoder = ffdec()
     
     eval_dir_idx = 0
     eval_dir_list = sort_nicely(os.listdir(eval_dir))
@@ -93,12 +103,13 @@ def calculate_accuracy(ground_truth_dir, eval_dir):
         if eval_dir_idx+1 < len(eval_dir_list) and frame_idx >= name2index(eval_dir_list[eval_dir_idx+1]):
             eval_dir_idx += 1
             # es_frame = cv2.imread(os.path.join(eval_dir, eval_dir_list[eval_dir_idx]))
-            es_frame = np.load(os.path.join(eval_dir, eval_dir_list[eval_dir_idx]))
+            es_frame = decode_from_path(decoder, eval_dir, eval_dir_list[eval_dir_idx])
             eval_result = model.predict(es_frame, verbose=False)
         
         print(frame_idx, name2index(eval_dir_list[eval_dir_idx]))
 
-        gt_frame = np.load(os.path.join(ground_truth_dir, frame_name))
+        gt_frame = cv2.imread(os.path.join(ground_truth_dir, frame_name))
+        # gt_frame = np.load(os.path.join(ground_truth_dir, frame_name))
         ground_truth_result = model.predict(gt_frame, verbose=False)
         allframes_result = model.predict(gt_frame, verbose=False)
 
@@ -111,8 +122,8 @@ def calculate_accuracy(ground_truth_dir, eval_dir):
     return eval_iou
 
 if __name__ == '__main__':
-    IMAGE_DIR = os.path.join(os.path.dirname(__file__), 'filter-images')
-    GROUND_TRUTH_DIR = f'{os.path.dirname(__file__)}/filter-images/ground-truth'
+    IMAGE_DIR = os.path.join(os.path.dirname(__file__), 'filter-images/zero-filter-3000/flashdrive')
+    GROUND_TRUTH_DIR = f'{os.path.dirname(__file__)}/filter-images/ground-truth-jpg'
     LOG_FILE = f'{os.path.dirname(__file__)}/accuracy-{time.time()}.csv'
     # ecostream_iou, allframes_iou = calculate_accuracy(os.path.join(PATH_STEM, GROUND_TRUTH_DIR), os.path.join(PATH_STEM, EVAL_DIR))
 
@@ -122,10 +133,9 @@ if __name__ == '__main__':
 
     batch_names = ['1.5', '1.8', '2.1', '2.4']
 
-    # for batch_name in batch_names:
-    #     BATCH_DIR = os.path.join(IMAGE_DIR, batch_name)
-    for batch_name in ['2.4']:
-        BATCH_DIR = os.path.join(IMAGE_DIR, '2.4', 'edge')
+    for batch_name in batch_names:
+    # for batch_name in ['1.5']:
+        BATCH_DIR = os.path.join(IMAGE_DIR, batch_name)
 
         for img_directory in sort_nicely(os.listdir(BATCH_DIR)):
 
