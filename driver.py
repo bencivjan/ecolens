@@ -142,7 +142,6 @@ def encode_frames(encoding_shmem_name: str, encoding_frame_idx: mp.Value, bitrat
         with encoding_frame_idx.get_lock():
             enc_frame_idx = encoding_frame_idx.value
             frame = encoding_shared_array.copy()
-        # print(f'encoding_frame_idx.value: {enc_frame_idx}')
         if enc_frame_idx == -1:
             frame_drop.put(encoded_frames_set)
             encoding_frame_idx.value = -2
@@ -153,9 +152,7 @@ def encode_frames(encoding_shmem_name: str, encoding_frame_idx: mp.Value, bitrat
             sleep(0.01)
             continue
         prev_frame_idx = enc_frame_idx
-        # print(f'Encode: Saving frame {enc_frame_idx}')
         encoded_frame = encoder.process_frame(frame)
-        print(f'Putting frame {enc_frame_idx}')
         save_queue.put((encoded_frame.tobytes(), enc_frame_idx))
 
         # decoded_frame = decoder.process_frame(encoded_frame)
@@ -287,7 +284,7 @@ if __name__ == '__main__':
     # generate_ground_truth(cap, width, height, 3000, 30, gt_dir)
 
     try:
-        for frequency in [2400000]:
+        for frequency in FREQUENCIES:
 
             set_cpu_freq(frequency)
 
@@ -315,13 +312,13 @@ if __name__ == '__main__':
                 else:
                     raise ValueError('ERROR: Filter not recognized')
 
-                for threshold in thresholds:
-                # for threshold in [0.00]:
+                # for threshold in thresholds:
+                for threshold in [0.00]:
 
                     diff_processor = filter(thresh=threshold)
 
-                    for frame_bitrate in FRAME_BITRATES:
-                    # for frame_bitrate in [3000]:
+                    # for frame_bitrate in FRAME_BITRATES:
+                    for frame_bitrate in [3000]:
                         bitrate = frame_bitrate * fps
                         save_dir = os.path.join(os.path.dirname(__file__), 'flashdrive', f'{frequency / 1_000_000}', f'{frequency / 1_000_000}-{class2str(filter)}-{threshold:.4f}-{frame_bitrate}')
                         # save_dir = os.path.join('/home', 'bencivjan', 'Desktop', 'flashdrive', 'batch1', f'{frequency / 1_000_000}-{class2str(filter)}-{threshold}-{frame_bitrate}')
@@ -343,12 +340,11 @@ if __name__ == '__main__':
                         # Save frames
                         frame, idx = save_queue.get()
                         while frame is not None:
-                            frame, idx = save_queue.get()
-                            print(f'Saving frame {idx}')
                             filename = os.path.join(save_dir, f'frame{idx}.npy')
                             # np.save(filename, frame)
                             with open(filename, mode='wb') as file:
                                 file.write(frame)
+                            frame, idx = save_queue.get()
 
                         read_frames_pid.join()
                         filter_frames_pid.join()    
