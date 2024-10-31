@@ -45,12 +45,12 @@ def throttle(target_fps, start_time):
     else:
         return False
     
-def read_frames(cap: cv2.VideoCapture, shmem_name: str, cur_frame_idx: mp.Value, target_fps: int, ret_queue: mp.Queue, frame_drop: mp.Queue):
+def read_frames(video: str, shmem_name: str, cur_frame_idx: mp.Value, target_fps: int, ret_queue: mp.Queue, frame_drop: mp.Queue):
     existing_shm = SharedMemory(name=shmem_name)
     shared_array = np.ndarray((height, width, 3), dtype=np.uint8, buffer=existing_shm.buf)
     total_frames_set = set() # Set to keep track of frame dropping
 
-    _ = cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    cap = cv2.VideoCapture(video)
     total_frames = 0
     read_start_time = monotonic()
     while True:
@@ -128,7 +128,7 @@ def filter_frames(diff_processor, filter_shmem_name: str, filter_frame_idx: mp.V
 
 def encode_frames(encoding_shmem_name: str, encoding_frame_idx: mp.Value, bitrate: int, fps: int, width: int, height: int, save_queue: mp.Queue, frame_drop: mp.Queue):
     encoder = ffenc(width, height, fps)
-    # decoder = ffdec()
+
     encoder.change_settings(bitrate, fps)
 
     encoding_shm = SharedMemory(name=encoding_shmem_name)
@@ -153,25 +153,17 @@ def encode_frames(encoding_shmem_name: str, encoding_frame_idx: mp.Value, bitrat
             continue
         prev_frame_idx = enc_frame_idx
         encoded_frame = encoder.process_frame(frame)
-        save_queue.put((encoded_frame.tobytes(), enc_frame_idx))
-
-        # decoded_frame = decoder.process_frame(encoded_frame)
-        # decoded_frame = cv2.cvtColor(decoded_frame, cv2.COLOR_RGB2BGR)
+        save_queue.put((encoded_frame, enc_frame_idx))
 
         encoded_frames_set.add(enc_frame_idx)
 
-        # Save raw image
-        # filename = os.path.join(save_dir, f'frame{enc_frame_idx}.npy')
-        # np.save(filename, decoded_frame)
-        # filename = os.path.join(save_dir, f'frame{enc_frame_idx}.jpg')
-        # cv2.imwrite(filename, decoded_frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
 
-def generate_ground_truth(cap, width, height, bitrate, fps, save_dir):
+def generate_ground_truth(cap, width, height, frame_bitrate, fps, save_dir):
     os.makedirs(save_dir, exist_ok=True)
 
     encoder = ffenc(width, height, fps)
     decoder = ffdec()
-    encoder.change_settings(bitrate, fps)
+    encoder.change_settings(frame_bitrate * fps, fps)
 
     frame_idx = 0
     
@@ -242,7 +234,8 @@ if __name__ == '__main__':
 
     current_time = datetime.now()
     LOG_FILE = f'./test-{current_time.strftime("%Y%m%d%H%M%S")}.csv'
-    VIDEO = './videos/ny_driving.nut'
+    VIDEO = './videos/jackson_hole_1min_1920x1080.nut'
+    # VIDEO = './videos/ny_driving.nut'
     FREQUENCIES = [1500000, 1800000, 2100000, 2400000]
     FILTERS = [PixelDiff, AreaDiff, EdgeDiff]
     # Batch 1: [0.1, 0.2, 0.3]
@@ -285,6 +278,7 @@ if __name__ == '__main__':
 
     try:
         for frequency in FREQUENCIES:
+        # for frequency in [2400000]:
 
             set_cpu_freq(frequency)
 
@@ -312,22 +306,20 @@ if __name__ == '__main__':
                 else:
                     raise ValueError('ERROR: Filter not recognized')
 
-                # for threshold in thresholds:
-                for threshold in [0.00]:
+                for threshold in thresholds:
+                # for threshold in [0.00]:
 
                     diff_processor = filter(thresh=threshold)
 
-                    # for frame_bitrate in FRAME_BITRATES:
-                    for frame_bitrate in [3000]:
+                    for frame_bitrate in FRAME_BITRATES:
+                    # for frame_bitrate in [3000]:
                         bitrate = frame_bitrate * fps
                         save_dir = os.path.join(os.path.dirname(__file__), 'flashdrive', f'{frequency / 1_000_000}', f'{frequency / 1_000_000}-{class2str(filter)}-{threshold:.4f}-{frame_bitrate}')
-                        # save_dir = os.path.join('/home', 'bencivjan', 'Desktop', 'flashdrive', 'batch1', f'{frequency / 1_000_000}-{class2str(filter)}-{threshold}-{frame_bitrate}')
                         os.makedirs(save_dir, exist_ok=True)
 
                         cur_exp_start_time = monotonic()
 
-                        # num_frames = encode_video(cap, diff_processor, encoder, decoder, save_dir, target_fps, total_exp_start_time)
-                        read_frames_pid = mp.Process(target=read_frames, args=(cap, filter_shm.name, filter_frame_idx, target_fps, return_values, frame_drop))
+                        read_frames_pid = mp.Process(target=read_frames, args=(VIDEO, filter_shm.name, filter_frame_idx, target_fps, return_values, frame_drop))
                         filter_frames_pid = mp.Process(target=filter_frames, args=(diff_processor, filter_shm.name, filter_frame_idx, encoding_shm.name, encoding_frame_idx,  width, height, frame_drop))
                         encode_frames_pid = mp.Process(target=encode_frames, args=(encoding_shm.name, encoding_frame_idx, bitrate, fps, width, height, save_queue, frame_drop))
 
@@ -341,9 +333,7 @@ if __name__ == '__main__':
                         frame, idx = save_queue.get()
                         while frame is not None:
                             filename = os.path.join(save_dir, f'frame{idx}.npy')
-                            # np.save(filename, frame)
-                            with open(filename, mode='wb') as file:
-                                file.write(frame)
+                            np.save(filename, frame)
                             frame, idx = save_queue.get()
 
                         read_frames_pid.join()
