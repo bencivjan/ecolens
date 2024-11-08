@@ -48,9 +48,9 @@ def frame_iou(ground_truth, prediction):
     - Frame IoU
     '''
     if len(ground_truth) == 0:
-        return 1
+        return 1.0 if len(prediction) == 0 else 0.0
     elif len(prediction) == 0:
-        return 0
+        return 0.0
     
     gt_to_pred_iou = np.zeros((len(ground_truth), len(prediction)))
     for i, truth in enumerate(ground_truth):
@@ -60,6 +60,46 @@ def frame_iou(ground_truth, prediction):
 
     gt_to_pred_iou = gt_to_pred_iou.max(axis=1)
     return gt_to_pred_iou.mean()
+
+def frame_iou_dynamic(ground_truth, prediction):
+    '''
+    Parameters:
+    - ground_truth: Ground truth bounding box list
+    - prediction: Prediction bounding box list
+
+    Returns:
+    - Frame IoU
+    '''
+    target_classes = [
+        0, # Person
+        1, # Car
+        3, # Motorcycle
+        5, # Bus
+        6, # Train
+        7, # Truck
+    ]
+    # Filter ground_truth and prediction to include only target classes
+    ground_truth = [gt for gt in ground_truth if gt.cls in target_classes]
+    prediction = [pred for pred in prediction if pred.cls in target_classes]
+
+    # Handle edge cases
+    if len(ground_truth) == 0:
+        return 1.0 if len(prediction) == 0 else 0.0
+    if len(prediction) == 0:
+        return 0.0
+
+    # Initialize IoU matrix
+    gt_to_pred_iou = np.zeros((len(ground_truth), len(prediction)))
+
+    # Calculate IoU for matching classes
+    for i, truth in enumerate(ground_truth):
+        for j, pred in enumerate(prediction):
+            if pred.cls == truth.cls:
+                gt_to_pred_iou[i][j] = iou(truth.xyxy[0], pred.xyxy[0])
+
+    # Get the best IoU for each ground truth and calculate mean
+    max_ious = gt_to_pred_iou.max(axis=1)
+    return max_ious.mean()
 
 def sort_nicely( l ):
     """ 
@@ -157,10 +197,12 @@ if __name__ == '__main__':
             
 
     # SINGLE CONFIG
-    LOG_FILE = f'{os.path.dirname(__file__)}/JH-full.csv'
+    LOG_FILE = f'{os.path.dirname(__file__)}/JH-night-full.csv'
+    # GROUND_TRUTH_DIR = '/media/ben/UBUNTU 22_0/ground-truth-JH-night-full'
     GROUND_TRUTH_DIR = f'{os.path.dirname(__file__)}/filter-images/ground-truth-JH-full'
+
+    # img_path = '/media/ben/UBUNTU 22_0/JH-night-full/1.5-pixel-0.0200-1000'
     img_path = os.path.join(os.path.dirname(__file__), 'filter-images', 'JH-full-1.5-pixel-0.0200-1000')
-    # img_path = os.path.join(os.path.dirname(__file__), 'filter-images', 'JH', '1.5', '1.5-pixel-0.0200-1000')
     iou_ = calculate_accuracy(GROUND_TRUTH_DIR, img_path, 'JH-full-accuracy-log.txt')
     print(f'{os.path.basename(img_path)} IoU: {round(iou_.mean(), 4)}')
     with open(LOG_FILE, mode='a') as file:
