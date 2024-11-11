@@ -72,8 +72,10 @@ def frame_iou_dynamic(ground_truth, prediction):
     '''
     target_classes = [
         0, # Person
-        1, # Car
+        1, # Bicycle
+        2, # Car
         3, # Motorcycle
+        4, # Airplane
         5, # Bus
         6, # Train
         7, # Truck
@@ -198,11 +200,11 @@ if __name__ == '__main__':
 
     # SINGLE CONFIG
     LOG_FILE = f'{os.path.dirname(__file__)}/JH-night-full.csv'
-    # GROUND_TRUTH_DIR = '/media/ben/UBUNTU 22_0/ground-truth-JH-night-full'
-    GROUND_TRUTH_DIR = f'{os.path.dirname(__file__)}/filter-images/ground-truth-JH-full'
+    GROUND_TRUTH_DIR = '/media/ben/UBUNTU 22_0/ground-truth-JH-night-full'
+    # GROUND_TRUTH_DIR = f'{os.path.dirname(__file__)}/filter-images/ground-truth-JH-full'
 
-    # img_path = '/media/ben/UBUNTU 22_0/JH-night-full/1.5-pixel-0.0200-1000'
-    img_path = os.path.join(os.path.dirname(__file__), 'filter-images', 'JH-full-1.5-pixel-0.0200-1000')
+    img_path = '/media/ben/UBUNTU 22_0/JH-night-full/1.5-pixel-0.0200-1000'
+    # img_path = os.path.join(os.path.dirname(__file__), 'filter-images', 'JH-full-1.5-pixel-0.0200-1000')
     iou_ = calculate_accuracy(GROUND_TRUTH_DIR, img_path, 'JH-full-accuracy-log.txt')
     print(f'{os.path.basename(img_path)} IoU: {round(iou_.mean(), 4)}')
     with open(LOG_FILE, mode='a') as file:
