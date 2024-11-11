@@ -48,9 +48,9 @@ def frame_iou(ground_truth, prediction):
     - Frame IoU
     '''
     if len(ground_truth) == 0:
-        return 1
+        return 1.0 if len(prediction) == 0 else 0.0
     elif len(prediction) == 0:
-        return 0
+        return 0.0
     
     gt_to_pred_iou = np.zeros((len(ground_truth), len(prediction)))
     for i, truth in enumerate(ground_truth):
@@ -60,6 +60,48 @@ def frame_iou(ground_truth, prediction):
 
     gt_to_pred_iou = gt_to_pred_iou.max(axis=1)
     return gt_to_pred_iou.mean()
+
+def frame_iou_dynamic(ground_truth, prediction):
+    '''
+    Parameters:
+    - ground_truth: Ground truth bounding box list
+    - prediction: Prediction bounding box list
+
+    Returns:
+    - Frame IoU
+    '''
+    target_classes = [
+        0, # Person
+        1, # Bicycle
+        2, # Car
+        3, # Motorcycle
+        4, # Airplane
+        5, # Bus
+        6, # Train
+        7, # Truck
+    ]
+    # Filter ground_truth and prediction to include only target classes
+    ground_truth = [gt for gt in ground_truth if gt.cls in target_classes]
+    prediction = [pred for pred in prediction if pred.cls in target_classes]
+
+    # Handle edge cases
+    if len(ground_truth) == 0:
+        return 1.0 if len(prediction) == 0 else 0.0
+    if len(prediction) == 0:
+        return 0.0
+
+    # Initialize IoU matrix
+    gt_to_pred_iou = np.zeros((len(ground_truth), len(prediction)))
+
+    # Calculate IoU for matching classes
+    for i, truth in enumerate(ground_truth):
+        for j, pred in enumerate(prediction):
+            if pred.cls == truth.cls:
+                gt_to_pred_iou[i][j] = iou(truth.xyxy[0], pred.xyxy[0])
+
+    # Get the best IoU for each ground truth and calculate mean
+    max_ious = gt_to_pred_iou.max(axis=1)
+    return max_ious.mean()
 
 def sort_nicely( l ):
     """ 
@@ -78,9 +120,10 @@ def decode_from_path(decoder, dir, name):
     with open(os.path.join(dir, name), 'rb') as f:
         byte_data = f.read()
     enc_frame = np.frombuffer(byte_data, dtype=np.uint8)
-    return decoder.process_frame(enc_frame)
+    decoded_frame = decoder.process_frame(enc_frame)
+    return cv2.cvtColor(decoded_frame, cv2.COLOR_RGB2BGR)
 
-def calculate_accuracy(ground_truth_dir, eval_dir):
+def calculate_accuracy(ground_truth_dir, eval_dir, log_file=None):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = YOLO(os.path.join(os.path.dirname(__file__), 'yolov8x.pt')).to(device)
 
@@ -100,55 +143,72 @@ def calculate_accuracy(ground_truth_dir, eval_dir):
         if frame_idx < name2index(eval_dir_list[0]):
             continue
 
-        if eval_dir_idx+1 < len(eval_dir_list) and frame_idx >= name2index(eval_dir_list[eval_dir_idx+1]):
-            eval_dir_idx += 1
-            # es_frame = cv2.imread(os.path.join(eval_dir, eval_dir_list[eval_dir_idx]))
+        # Decode first frame if we have not yet
+        if eval_dir_idx == 0 and not eval_result:
             es_frame = decode_from_path(decoder, eval_dir, eval_dir_list[eval_dir_idx])
             eval_result = model.predict(es_frame, verbose=False)
-        
-        print(frame_idx, name2index(eval_dir_list[eval_dir_idx]))
+
+        # Decode next eval frame if it is equal to the ground truth frame index
+        if eval_dir_idx+1 < len(eval_dir_list) and frame_idx >= name2index(eval_dir_list[eval_dir_idx+1]):
+            eval_dir_idx += 1
+            es_frame = decode_from_path(decoder, eval_dir, eval_dir_list[eval_dir_idx])
+            eval_result = model.predict(es_frame, verbose=False)
 
         gt_frame = cv2.imread(os.path.join(ground_truth_dir, frame_name))
-        # gt_frame = np.load(os.path.join(ground_truth_dir, frame_name))
         ground_truth_result = model.predict(gt_frame, verbose=False)
-        allframes_result = model.predict(gt_frame, verbose=False)
 
-        if eval_result is None:
-            # Use first frame for eval if we haven't predicted yet
-            eval_result = allframes_result
+        # cv2.imshow('Ground Truth', ground_truth_result[0].plot())
+        # cv2.imshow('Eval', eval_result[0].plot())
+        # cv2.waitKey(1)
+
+        print(frame_idx, name2index(eval_dir_list[eval_dir_idx]))
 
         eval_iou[i] = frame_iou(ground_truth_result[0].boxes, eval_result[0].boxes)
+
+        if log_file and i > 0 and i % 1800 == 0: # Log every 60 seconds at 30fps
+            with open(log_file, mode='a') as file:
+                file.write(f'Frame {frame_idx}: {eval_iou[:i].mean()}\n')
 
     return eval_iou
 
 if __name__ == '__main__':
-    IMAGE_DIR = os.path.join(os.path.dirname(__file__), 'filter-images/zero-filter-3000/flashdrive')
-    GROUND_TRUTH_DIR = f'{os.path.dirname(__file__)}/filter-images/ground-truth-jpg'
-    LOG_FILE = f'{os.path.dirname(__file__)}/accuracy-{time.time()}.csv'
-    # ecostream_iou, allframes_iou = calculate_accuracy(os.path.join(PATH_STEM, GROUND_TRUTH_DIR), os.path.join(PATH_STEM, EVAL_DIR))
+    # IMAGE_DIR = os.path.join(os.path.dirname(__file__), 'filter-images/zero-filter-3000/flashdrive')
+    # GROUND_TRUTH_DIR = f'{os.path.dirname(__file__)}/filter-images/ground-truth-JH-full'
+    # LOG_FILE = f'{os.path.dirname(__file__)}/accuracy-{time.time()}.csv'
+    # # ecostream_iou, allframes_iou = calculate_accuracy(os.path.join(PATH_STEM, GROUND_TRUTH_DIR), os.path.join(PATH_STEM, EVAL_DIR))
 
-    print(IMAGE_DIR)
-    with open(LOG_FILE, mode='w') as file:
-        file.write('Frequency,Filter,Threshold,Frame Bitrate,Average IoU\n')
+    # print(IMAGE_DIR)
+    # with open(LOG_FILE, mode='w') as file:
+    #     file.write('Frequency,Filter,Threshold,Frame Bitrate,Average IoU\n')
 
-    batch_names = ['1.5', '1.8', '2.1', '2.4']
+    # batch_names = ['1.5', '1.8', '2.1', '2.4']
 
-    for batch_name in batch_names:
-    # for batch_name in ['1.5']:
-        BATCH_DIR = os.path.join(IMAGE_DIR, batch_name)
+    # for batch_name in batch_names:
+    #     BATCH_DIR = os.path.join(IMAGE_DIR, batch_name)
+    #     for img_directory in sort_nicely(os.listdir(BATCH_DIR)):
 
-        for img_directory in sort_nicely(os.listdir(BATCH_DIR)):
+    #         img_path = os.path.join(BATCH_DIR, img_directory)
 
-            img_path = os.path.join(BATCH_DIR, img_directory)
-
-            if os.path.isdir(img_path):
-                print(img_directory)
-                iou_ = calculate_accuracy(GROUND_TRUTH_DIR, img_path)
-                print(f'Batch {batch_name}: {img_directory} IoU: {round(iou_.mean(), 4)}')
-                with open(LOG_FILE, mode='a') as file:
-                    freq, filter, thresh, bitrate = img_directory.split('-')
-                    file.write(f'{freq},{filter},{thresh},{bitrate},{iou_.mean():.4f}\n')
+    #         if os.path.isdir(img_path):
+    #             print(img_directory)
+    #             iou_ = calculate_accuracy(GROUND_TRUTH_DIR, img_path)
+    #             print(f'Batch {batch_name}: {img_directory} IoU: {round(iou_.mean(), 4)}')
+    #             with open(LOG_FILE, mode='a') as file:
+    #                 freq, filter, thresh, bitrate = img_directory.split('-')
+    #                 file.write(f'{freq},{filter},{thresh},{bitrate},{iou_.mean():.4f}\n')
             
-    
-    # print(f'Ecostream IoU by frame: {ecostream_iou.reshape(-1, 1)}')
-    # print(f'EcoStream IoU: {round(ecostream_iou.mean(), 4)}')
+
+    # SINGLE CONFIG
+    LOG_FILE = f'{os.path.dirname(__file__)}/JH-night-full.csv'
+    GROUND_TRUTH_DIR = '/media/ben/UBUNTU 22_0/ground-truth-JH-night-full'
+    # GROUND_TRUTH_DIR = f'{os.path.dirname(__file__)}/filter-images/ground-truth-JH-full'
+
+    img_path = '/media/ben/UBUNTU 22_0/JH-night-full/1.5-pixel-0.0200-1000'
+    # img_path = os.path.join(os.path.dirname(__file__), 'filter-images', 'JH-full-1.5-pixel-0.0200-1000')
+    iou_ = calculate_accuracy(GROUND_TRUTH_DIR, img_path, 'JH-full-accuracy-log.txt')
+    print(f'{os.path.basename(img_path)} IoU: {round(iou_.mean(), 4)}')
+    with open(LOG_FILE, mode='a') as file:
+        file.write('Frequency,Filter,Threshold,Frame Bitrate,Average IoU\n')
+        img_dir_name = os.path.basename(img_path)
+        _, _, freq, filter, thresh, bitrate = img_dir_name.split('-')
+        file.write(f'{freq},{filter},{thresh},{bitrate},{iou_.mean():.4f}\n')
