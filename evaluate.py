@@ -136,6 +136,10 @@ def calculate_accuracy(ground_truth_dir, eval_dir, log_file=None):
 
     eval_result = None
 
+    # fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    # ground_truth_output = cv2.VideoWriter('ground_truth_video.mp4', fourcc, 30.0, (1920, 1080))
+    # eval_output = cv2.VideoWriter('eval_video.mp4', fourcc, 30.0, (1920, 1080))
+
     for i, frame_name in enumerate(sort_nicely(os.listdir(ground_truth_dir))):
         frame_idx = name2index(frame_name)
 
@@ -160,6 +164,8 @@ def calculate_accuracy(ground_truth_dir, eval_dir, log_file=None):
         # cv2.imshow('Ground Truth', ground_truth_result[0].plot())
         # cv2.imshow('Eval', eval_result[0].plot())
         # cv2.waitKey(1)
+        # ground_truth_output.write(ground_truth_result[0].plot())
+        # eval_output.write(ground_truth_result[0].plot())
 
         print(frame_idx, name2index(eval_dir_list[eval_dir_idx]))
 
@@ -168,6 +174,9 @@ def calculate_accuracy(ground_truth_dir, eval_dir, log_file=None):
         if log_file and i > 0 and i % 1800 == 0: # Log every 60 seconds at 30fps
             with open(log_file, mode='a') as file:
                 file.write(f'Frame {frame_idx}: {eval_iou[:i].mean()}\n')
+
+    # ground_truth_output.release()
+    # eval_output.release()
 
     return eval_iou
 
@@ -200,12 +209,12 @@ if __name__ == '__main__':
 
     # SINGLE CONFIG
     LOG_FILE = f'{os.path.dirname(__file__)}/JH-night-full.csv'
-    GROUND_TRUTH_DIR = '/media/ben/UBUNTU 22_0/ground-truth-JH-night-full'
-    # GROUND_TRUTH_DIR = f'{os.path.dirname(__file__)}/filter-images/ground-truth-JH-full'
+    # GROUND_TRUTH_DIR = '/media/ben/UBUNTU 22_0/ground-truth-JH-night-full'
+    GROUND_TRUTH_DIR = f'{os.path.dirname(__file__)}/filter-images/ground-truth-JH'
 
-    img_path = '/media/ben/UBUNTU 22_0/JH-night-full/1.5-pixel-0.0200-1000'
-    # img_path = os.path.join(os.path.dirname(__file__), 'filter-images', 'JH-full-1.5-pixel-0.0200-1000')
-    iou_ = calculate_accuracy(GROUND_TRUTH_DIR, img_path, 'JH-full-accuracy-log.txt')
+    # img_path = '/media/ben/UBUNTU 22_0/JH-night-full/1.5-pixel-0.0200-1000'
+    img_path = os.path.join(os.path.dirname(__file__), 'filter-images', 'JH-full-1.5-pixel-0.0200-1000')
+    iou_ = calculate_accuracy(GROUND_TRUTH_DIR, img_path)
     print(f'{os.path.basename(img_path)} IoU: {round(iou_.mean(), 4)}')
     with open(LOG_FILE, mode='a') as file:
         file.write('Frequency,Filter,Threshold,Frame Bitrate,Average IoU\n')
