@@ -1,6 +1,6 @@
 from pathlib import Path
 
-root_dir = Path("JH/1.5")
+root_dir = Path("JH/2.4")
 
 print('Frequency,Filter,Threshold,Frame Bitrate,Frame Count')
 
