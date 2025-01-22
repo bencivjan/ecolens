@@ -3,6 +3,7 @@ import configparser
 import cv2
 import imutils
 import numpy as np
+import os
 
 from video_processor import VideoProcessor
 
@@ -114,7 +115,7 @@ class DiffProcessor:
     @staticmethod
     def get_section(dataset):
         config = configparser.ConfigParser()
-        config.read('./diff_config.ini')
+        config.read(f'{os.path.dirname(__file__)}/diff_config.ini')
         return config[dataset if dataset and dataset in config else 'default']
 
     def _load_section(self, section):
