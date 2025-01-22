@@ -44,6 +44,7 @@ class Evaluator:
 
     def evaluate_configs(self, configs):
         video_configs = [VideoConfiguration(thresh=float(c[0]), frame_bitrate=int(c[1])) for c in configs]
+        print([(c.filter.thresh, c.frame_bitrate) for c in video_configs])
         ious = [[] for _ in configs]
         # Iterate through ground truth
         for i, frame_name in tqdm(enumerate(sort_nicely(os.listdir(self.ground_truth_dir))), total=len(os.listdir(self.ground_truth_dir))):
@@ -55,11 +56,7 @@ class Evaluator:
 
             # If frame satisfies filter, run inference & update bounding box
             for j, vc in enumerate(video_configs):
-                if vc.frame_bitrate == self.MAX_BITRATE:
-                    vc.features = vc.filter.get_frame_feature(frame)
-                else:
-                    temp_frame = self.modify_frame_bitrate(frame, vc.frame_bitrate)
-                    vc.features = vc.filter.get_frame_feature(temp_frame)
+                vc.features = vc.filter.get_frame_feature(frame)
 
                 if vc.prev_features is None:
                     vc.prev_features = vc.features
@@ -68,7 +65,11 @@ class Evaluator:
                     vc.bb = bb
 
                 if dis > vc.filter.thresh:
-                    vc.bb = bb
+                    if vc.frame_bitrate == self.MAX_BITRATE:
+                        vc.bb = bb
+                    else:
+                        temp_frame = self.modify_frame_bitrate(frame, vc.frame_bitrate)
+                        vc.bb = self.model.predict(temp_frame, verbose=False)[0].boxes
                     vc.prev_features = vc.features
 
                 # Calculate IoU based on bounding boxes
@@ -88,4 +89,6 @@ if __name__ == "__main__":
     # print(evaluator.evaluate_configs([[0.01, 1000]]))
 
     # TEST MIXED BITRATE
-    print(evaluator.evaluate_configs([[0.01, 3000], [0.01, 1000], [0.02, 3000], [0.02, 1600], [0.02, 1000]]))
+    # print(evaluator.evaluate_configs([[0.01, 3000], [0.01, 1000], [0.02, 3000], [0.02, 1600], [0.02, 1000]]))
+
+    print(evaluator.evaluate_configs([[0.03, 400], [0.03, 100]]))

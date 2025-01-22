@@ -76,25 +76,12 @@ class VideoBayesianOpt:
         return self.ask_tell.ask()
     
     def tell_observations(self, configs, observations) -> None:
-        # observations = [tf.constant([x, -y]) for x, y in observations]
         x_values = observations[:, 0]
         y_values = -observations[:, 1]
         observations = tf.stack([x_values, y_values], axis=1)
-        # observations = tf.convert_to_tensor(observations, dtype=tf.float64)
         data = Dataset(configs, observations)
         self.ask_tell.tell(data)
 
-    # @staticmethod
-    # def evaluate_config(configuration) -> tuple[float, float]:
-    #     # Dummy implementation for testing
-    #     threshold, bitrate = float(configuration[0]), int(configuration[1])
-    #     df = VideoBayesianOpt.read_profiling_data("../viz/energy-JH-1.csv", "../viz/accuracy-JH-1.csv")
-    #     print(f'threshold: {threshold}, bitrate: {bitrate}')
-    #     df = df[(df['Threshold'] == threshold) & (df['Frame Bitrate'] == bitrate)]
-    #     old_acc = df['Average IoU'].values[0]
-    #     new_acc = df['Average IoU'].values[0] + tf.random.uniform(shape=(), minval=-0.05, maxval=0.05)
-    #     print(f'configuration: {configuration}, old accuracy: {old_acc}, new accuracy: {new_acc}')
-    #     return float(df['Avg Energy'].values[0]), float(new_acc)
 
 def remove_tensor_duplicates(tensor):
     def tensor_in_list(tensor, tensor_list):
