@@ -43,15 +43,21 @@ class Evaluator:
         return self.h264_processor_dict[bitrate][1].process_frame(enc_frame)
 
     def evaluate_configs(self, configs):
+        if len(configs) == 0:
+            return []
         video_configs = [VideoConfiguration(thresh=float(c[0]), frame_bitrate=int(c[1])) for c in configs]
         print([(c.filter.thresh, c.frame_bitrate) for c in video_configs])
         ious = [[] for _ in configs]
         # Iterate through ground truth
         for i, frame_name in tqdm(enumerate(sort_nicely(os.listdir(self.ground_truth_dir))), total=len(os.listdir(self.ground_truth_dir))):
             frame_idx = name2index(frame_name)
-            # print(frame_name)
-            # Potentially read as JPEG instead
-            frame = decode_from_path(self.decoder, self.ground_truth_dir, frame_name)
+            # READ AS JPEG
+            frame = cv2.imread(os.path.join(self.ground_truth_dir, frame_name))
+            if frame is None:
+                raise AssertionError(f'Unable to read image from {self.ground_truth_dir}')
+            # READ AS H264
+            # frame = decode_from_path(self.decoder, self.ground_truth_dir, frame_name)
+
             bb = self.model.predict(frame, verbose=False)[0].boxes
 
             # If frame satisfies filter, run inference & update bounding box

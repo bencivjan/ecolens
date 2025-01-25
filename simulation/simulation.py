@@ -29,6 +29,8 @@ class VideoBayesianOpt:
         fant_ehvi = Fantasizer(ExpectedHypervolumeImprovement())
         self.rule: EfficientGlobalOptimization = EfficientGlobalOptimization(builder=fant_ehvi, num_query_points=batch_size)
 
+        self.query_history = set()
+
     @staticmethod
     def read_profiling_data(energy_file, accuracy_file):
         accuracy_df = pd.read_csv(accuracy_file)
@@ -73,9 +75,19 @@ class VideoBayesianOpt:
         return self.bo.optimize(num_steps, self.dataset, self.model, self.rule)
 
     def ask_for_suggestions(self) -> Dataset:
-        return self.ask_tell.ask()
+        suggestions = self.ask_tell.ask()
+        final_suggestions = []
+        for s in suggestions:
+            suggestion_tup = (float(s[0].numpy()), int(s[1].numpy()))
+            if suggestion_tup not in self.query_history:
+                final_suggestions.append(s)
+                self.query_history.add(suggestion_tup)
+        print(self.query_history)
+        return tf.stack(final_suggestions)
     
     def tell_observations(self, configs, observations) -> None:
+        if configs.shape[0] == 0 or observations.shape[0] == 0:
+            return
         x_values = observations[:, 0]
         y_values = -observations[:, 1]
         observations = tf.stack([x_values, y_values], axis=1)
@@ -97,36 +109,60 @@ def remove_tensor_duplicates(tensor):
     return tf.convert_to_tensor(unique)
 
 class Simulation:
-    def __init__(self) -> None:
+    def __init__(self, frame_dir, energy_profile, accuracy_profile, explore_time=10, exploit_time=50) -> None:
         self.search_space = []
         for thresh in [0.00, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10]:
             for br in [100, 400, 700, 1000, 1300, 1600, 1900, 2100, 2400, 2700, 3000]:
                 self.search_space.append([thresh, br])
 
         self.batch_size = 4
-        self.evaluator = Evaluator('../filter-images/JH/1.5/1.5-pixel-0.0000-3000')
+        self.evaluator = Evaluator(frame_dir)
+        self.energy_profile = energy_profile
+        self.accuracy_profile = accuracy_profile
+        self.total_frames = len(os.listdir(frame_dir))
+
+        self.explore_time = explore_time
+        self.exploit_time = exploit_time
+        self.fps = 30
 
     def run(self) -> None:
         mbo = VideoBayesianOpt(self.search_space, self.batch_size)
-        mbo.build_dataset_from_profile("../viz/energy-JH-1.csv", "../viz/accuracy-JH-1.csv")
+        mbo.build_dataset_from_profile(self.energy_profile, self.accuracy_profile)
         mbo.build_stacked_independent_objectives_model(mbo.dataset)
 
         num_init_points = mbo.dataset.observations.shape[0]
         print(f'Number of initial points: {num_init_points}')
 
-        for _ in range(4):
-            suggestions = remove_tensor_duplicates(mbo.ask_for_suggestions())
-            print(suggestions)
-            new_accuracies = self.evaluator.evaluate_configs(suggestions)
-            print(new_accuracies)
-            est_energies = mbo.get_config_profile_energy(suggestions)
-            print(est_energies)
-            mbo.tell_observations(suggestions, tf.stack([est_energies, new_accuracies], axis=1))
+        i = 0
+        explore = False
+        config = (0.1, 3000)
+        cur_range = range(0, self.exploit_time * self.fps)
+        while i < self.total_frames:
+            if not explore:
+                accuracy = self.evaluator.evaluate_configs([config], cur_range.start, cur_range.stop)
+                cur_range = range(cur_range.stop, cur_range.stop + self.explore_time * self.fps)
+                # i = cur_range.stop
+                explore = True
+            else:
+                for _ in range(4):
+                    suggestions = remove_tensor_duplicates(mbo.ask_for_suggestions())
+                    print(suggestions)
+                    new_accuracies = self.evaluator.evaluate_configs(suggestions, cur_range.start, cur_range.stop)
+                    print(new_accuracies)
+                    est_energies = mbo.get_config_profile_energy(suggestions)
+                    print(est_energies)
+                    mbo.tell_observations(suggestions, tf.stack([est_energies, new_accuracies], axis=1))
+
+                    cur_range = range(cur_range.stop, cur_range.stop + self.exploit_time * self.fps)
+                    explore = False
+            i = cur_range.stop
 
         dataset = mbo.ask_tell.to_result().try_get_final_dataset()
         plot_mobo_points_in_obj_space(dataset.observations, num_init=num_init_points, xlabel="Energy", ylabel="Accuracy")
         plt.show()
 
 if __name__ == "__main__":
-    simulation = Simulation()
+    simulation = Simulation(frame_dir='../filter-images/ground-truth-JH-full',
+                            energy_profile="../viz/energy-JH-1.csv",
+                            accuracy_profile="../viz/accuracy-JH-1.csv")
     simulation.run()
