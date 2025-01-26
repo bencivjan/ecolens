@@ -7,12 +7,6 @@ from trieste.models import TrainableModelStack
 from trieste.models.gpflow import build_gpr, GaussianProcessRegression
 from trieste.space import DiscreteSearchSpace
 from trieste.ask_tell_optimization import AskTellOptimizer
-
-from trieste.experimental.plotting import (
-    plot_bo_points,
-    plot_function_2d,
-    plot_mobo_points_in_obj_space,
-)
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -53,8 +47,8 @@ def build_trieste_dataset():
     return Dataset(query_points, observations)
 
 def read_profiling_data():
-    accuracy_df = pd.read_csv('viz/accuracy-JH-1.csv')
-    energy_df = pd.read_csv('viz/energy-JH-1.csv')
+    accuracy_df = pd.read_csv('../viz/accuracy-JH-1.csv')
+    energy_df = pd.read_csv('../viz/energy-JH-1.csv')
     merged_df = pd.merge(accuracy_df, energy_df, on=["Frequency", "Filter", "Threshold", "Frame Bitrate"])
     merged_df = merged_df.drop(columns=['FPS', 'Start Time', 'End Time'])
     merged_df = merged_df[(merged_df['Frequency'] == 1.5) & (merged_df['Filter'] == 'pixel')]
@@ -82,12 +76,12 @@ if __name__ == '__main__':
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
 
-    ax1.scatter(query_points[:, 0], query_points[:, 1], color='green', label='Given Points')
-    ax1.scatter(eval_dataset[:, 0], eval_dataset[:, 1], color='purple', label='Evaluated Points')
+    ax1.scatter(query_points[:, 0], query_points[:, 1], color='green')
+    # ax1.scatter(eval_dataset[:, 0], eval_dataset[:, 1], color='purple', label='Evaluated Points')
     ax1.set_xlabel('Threshold')
     ax1.set_ylabel('Bitrate')
-    ax1.set_title('Queries')
-    ax1.legend()
+    ax1.set_title('Configuration Search Space')
+    # ax1.legend()
     ax1.grid()
     # ax1.set_xlim(-0.005, 0.105)
     # ax1.set_ylim(-150, 3150)
@@ -97,7 +91,7 @@ if __name__ == '__main__':
     ax2.scatter(observations[:, 0], -observations[:, 1], color='green')
     ax2.set_xlabel('Energy')
     ax2.set_ylabel('Accuracy')
-    ax2.set_title('Objective Space')
+    ax2.set_title('Apriori Objective Space')
     # ax2.legend()
     ax2.grid()
     # ax2.set_xlim(3.0, 5.0)
@@ -105,4 +99,4 @@ if __name__ == '__main__':
     # ax2.set_xticks(np.arange(0.0, 0.11, 0.01))
     # ax2.set_yticks(np.arange(0, 3100, 300))
 
-    plt.savefig("plot.jpeg", format="jpeg")
+    plt.savefig("search_objective_apriori.jpeg", format="jpeg")
