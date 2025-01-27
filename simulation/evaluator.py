@@ -26,7 +26,7 @@ class Evaluator:
     def __init__(self, ground_truth_dir):
         self.ground_truth_dir = ground_truth_dir
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model = YOLO(os.path.join(os.path.dirname(__file__), '../yolov8x.pt')).to(self.device)
+        self.model = YOLO(os.path.join(os.path.dirname(__file__), '../yolov8n.pt')).to(self.device)
         self.decoder = ffdec()
         self.h264_processor_dict = {}
         self.fps = 30
@@ -42,14 +42,14 @@ class Evaluator:
         enc_frame = self.h264_processor_dict[bitrate][0].process_frame(frame)
         return self.h264_processor_dict[bitrate][1].process_frame(enc_frame)
 
-    def evaluate_configs(self, configs):
+    def evaluate_configs(self, configs, start_frame, end_frame):
         if len(configs) == 0:
             return []
         video_configs = [VideoConfiguration(thresh=float(c[0]), frame_bitrate=int(c[1])) for c in configs]
         print([(c.filter.thresh, c.frame_bitrate) for c in video_configs])
         ious = [[] for _ in configs]
         # Iterate through ground truth
-        for i, frame_name in tqdm(enumerate(sort_nicely(os.listdir(self.ground_truth_dir))), total=len(os.listdir(self.ground_truth_dir))):
+        for i, frame_name in tqdm(enumerate(sort_nicely(os.listdir(self.ground_truth_dir)[start_frame:end_frame])), total=end_frame - start_frame):
             frame_idx = name2index(frame_name)
             # READ AS JPEG
             frame = cv2.imread(os.path.join(self.ground_truth_dir, frame_name))

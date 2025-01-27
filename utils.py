@@ -2,6 +2,7 @@ import cv2
 import os
 import numpy as np
 import re
+import tensorflow as tf
 
 def iou(box1, box2):
     """
@@ -118,3 +119,16 @@ def decode_from_path(decoder, dir, name):
     enc_frame = np.frombuffer(byte_data, dtype=np.uint8)
     decoded_frame = decoder.process_frame(enc_frame)
     return cv2.cvtColor(decoded_frame, cv2.COLOR_RGB2BGR)
+
+def remove_tensor_duplicates(tensor):
+    def tensor_in_list(tensor, tensor_list):
+        for t in tensor_list:
+            if tf.reduce_all(tf.equal(t, tensor)):
+                return True
+        return False
+
+    unique = []
+    for t in tensor:
+        if not tensor_in_list(t, unique):
+            unique.append(t)
+    return tf.convert_to_tensor(unique)
