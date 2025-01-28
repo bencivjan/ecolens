@@ -69,7 +69,7 @@ class VideoBayesianOpt:
             single_obj_data = Dataset(
                 data.query_points, tf.gather(data.observations, [idx], axis=1)
             )
-            gpr = build_gpr(single_obj_data, self.search_space, likelihood_variance=1e-5)
+            gpr = build_gpr(single_obj_data, self.search_space)
             gprs.append((GaussianProcessRegression(gpr), 1))
 
         self.model = TrainableModelStack(*gprs)
@@ -208,10 +208,10 @@ class Simulation:
                 explore = True
             else: # explore
                 configuration_acc = self.run_verify_round(cur_range)
-                if configuration_acc < target_accuracy:
-                    self.run_explore_round(mbo, cur_range, iterations=3)
-                    # TODO: Refine selection algorithm
-                    self.select_configuration(mbo, target_accuracy)
+                # if configuration_acc < target_accuracy:
+                self.run_explore_round(mbo, cur_range, iterations=3)
+                # TODO: Refine selection algorithm
+                self.select_configuration(mbo, target_accuracy)
                 cur_range = range(cur_range.stop, cur_range.stop + self.exploit_time * self.fps)
                 explore = False
             i = cur_range.stop
