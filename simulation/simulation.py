@@ -6,12 +6,13 @@ import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-from trieste.acquisition.function import ExpectedHypervolumeImprovement, Fantasizer
+import trieste.acquisition
+from trieste.acquisition.function import ExpectedHypervolumeImprovement, Fantasizer, ExpectedConstrainedHypervolumeImprovement
 from trieste.acquisition.rule import EfficientGlobalOptimization
 from trieste.data import Dataset
 from trieste.models import TrainableModelStack
 from trieste.models.gpflow import build_gpr, GaussianProcessRegression
-from trieste.space import DiscreteSearchSpace
+from trieste.space import DiscreteSearchSpace, Box
 from trieste.ask_tell_optimization import AskTellOptimizer
 from trieste.experimental.plotting import plot_mobo_points_in_obj_space
 from evaluator import Evaluator
@@ -25,8 +26,12 @@ class VideoBayesianOpt:
 
         self.num_objectives = 2
         self.search_space = DiscreteSearchSpace(tf.constant(search_space, dtype=tf.float64))
+
+        self.OBJECTIVE = "OBJECTIVE"
+        self.CONSTRAINT = "CONSTRAINT"
         
-        fant_ehvi = Fantasizer(ExpectedHypervolumeImprovement())
+        pof = trieste.acquisition.ProbabilityOfFeasibility(threshold=0.75)
+        fant_ehvi = Fantasizer(ExpectedConstrainedHypervolumeImprovement(self.OBJECTIVE, pof.using(self.CONSTRAINT)))
         self.rule: EfficientGlobalOptimization = EfficientGlobalOptimization(builder=fant_ehvi, num_query_points=batch_size)
 
         self.explore_history = set()
@@ -69,11 +74,24 @@ class VideoBayesianOpt:
             single_obj_data = Dataset(
                 data.query_points, tf.gather(data.observations, [idx], axis=1)
             )
-            gpr = build_gpr(single_obj_data, self.search_space)
+            gpr = build_gpr(single_obj_data, self.search_space, likelihood_variance=0.02)
             gprs.append((GaussianProcessRegression(gpr), 1))
 
-        self.model = TrainableModelStack(*gprs)
-        self.ask_tell = AskTellOptimizer(self.search_space, data, self.model, acquisition_rule=self.rule, fit_model=True)
+        objective_model = TrainableModelStack(*gprs)
+
+        print(data)
+
+        constraint_observations = tf.expand_dims(tf.where(data.observations[:,1] <= -0.9, -data.observations[:,1] - 0.9, (0.9 - data.observations[:,1]) ** 2), axis=1)
+        print(constraint_observations)
+        constraint_data = Dataset(data.query_points, constraint_observations)
+        print(constraint_data)
+        gpflow_model = build_gpr(constraint_data, self.search_space)
+        constraint_model = GaussianProcessRegression(gpflow_model)
+        
+        self.models = {self.OBJECTIVE: objective_model, self.CONSTRAINT: constraint_model}
+        labeled_data = {self.OBJECTIVE: data, self.CONSTRAINT: constraint_data}
+
+        self.ask_tell = AskTellOptimizer(self.search_space, labeled_data, self.models, acquisition_rule=self.rule, fit_model=True)
 
     def ask_for_suggestions(self) -> Dataset:
         suggestions = self.ask_tell.ask()
@@ -94,8 +112,12 @@ class VideoBayesianOpt:
         x_values = observations[:, 0]
         y_values = -observations[:, 1]
         observations = tf.stack([x_values, y_values], axis=1)
-        data = Dataset(configs, observations)
-        self.ask_tell.tell(data)
+        objective_dataset = Dataset(configs, observations)
+
+        constraint_observations = tf.expand_dims(tf.where(objective_dataset.observations[:,1] <= -0.9, -objective_dataset.observations[:,1] - 0.9, (0.9 - objective_dataset.observations[:,1]) ** 2), axis=1)
+        constraint_dataset = Dataset(objective_dataset.query_points, constraint_observations)
+        
+        self.ask_tell.tell({self.OBJECTIVE: objective_dataset, self.CONSTRAINT: constraint_dataset})
 
     # def get_dataset(self):
     #     return self.ask_tell.to_result().try_get_final_dataset()
@@ -170,7 +192,8 @@ class Simulation:
 
     def run_explore_round(self, mbo: VideoBayesianOpt, frame_range: range, iterations: int):
         for _ in range(iterations):
-            suggestions = remove_tensor_duplicates(mbo.ask_for_suggestions())
+            # suggestions = remove_tensor_duplicates(mbo.ask_for_suggestions())
+            suggestions = mbo.ask_for_suggestions()
             print(suggestions)
             new_accuracies = self.evaluator.evaluate_configs(suggestions, frame_range.start, frame_range.stop)
             print(new_accuracies)
@@ -186,7 +209,9 @@ class Simulation:
         return accuracy
     
     def select_configuration(self, mbo: VideoBayesianOpt, target_accuracy: float):
-        self.config = mbo.get_recommended_configuration(target_accuracy)
+        recommended_config = mbo.get_recommended_configuration(target_accuracy)
+        if recommended_config is not None:
+            self.config = recommended_config
 
     def run(self, target_accuracy: float) -> None:
         mbo = VideoBayesianOpt(self.search_space, self.batch_size)
@@ -216,7 +241,9 @@ class Simulation:
                 explore = False
             i = cur_range.stop
 
-        dataset = mbo.ask_tell.to_result().try_get_final_dataset()
+        # dataset = mbo.ask_tell.to_result().try_get_final_dataset()
+        dataset = mbo.ask_tell.to_result().final_result.unwrap().datasets["OBJECTIVE"]
+        constraint_dataset = mbo.ask_tell.to_result().final_result.unwrap().datasets["CONSTRAINT"]
         print(dataset)
         plot_mobo_points_in_obj_space(dataset.observations, num_init=num_init_points, xlabel="Energy", ylabel="Accuracy")
         plt.show()
