@@ -23,10 +23,10 @@ class VideoConfiguration:
 
 class Evaluator:
 
-    def __init__(self, ground_truth_dir):
+    def __init__(self, ground_truth_dir, model_path='yolov8x.pt'):
         self.ground_truth_dir = ground_truth_dir
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model = YOLO(os.path.join(os.path.dirname(__file__), '../yolov8n.pt')).to(self.device)
+        self.model = YOLO(model_path).to(self.device)
         self.decoder = ffdec()
         self.h264_processor_dict = {}
         self.fps = 30
