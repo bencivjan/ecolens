@@ -49,8 +49,7 @@ class Evaluator:
         print([(c.filter.thresh, c.frame_bitrate) for c in video_configs])
         ious = [[] for _ in configs]
         # Iterate through ground truth
-        for i, frame_name in tqdm(enumerate(sort_nicely(os.listdir(self.ground_truth_dir)[start_frame:end_frame])), total=end_frame - start_frame):
-            frame_idx = name2index(frame_name)
+        for i, frame_name in tqdm(enumerate(sort_nicely(os.listdir(self.ground_truth_dir))[start_frame:end_frame]), total=end_frame - start_frame):
             # READ AS JPEG
             frame = cv2.imread(os.path.join(self.ground_truth_dir, frame_name))
             if frame is None:
@@ -86,7 +85,7 @@ class Evaluator:
     
 
 if __name__ == "__main__":
-    evaluator = Evaluator('../filter-images/JH/1.5/1.5-pixel-0.0000-3000')
+    evaluator = Evaluator('../filter-images/ground-truth-JH-full')
 
     # TEST BASIC EVAL
     # print(evaluator.evaluate_configs([[0.01, 3000], [0.02, 3000], [0.03, 3000]]))
@@ -97,4 +96,4 @@ if __name__ == "__main__":
     # TEST MIXED BITRATE
     # print(evaluator.evaluate_configs([[0.01, 3000], [0.01, 1000], [0.02, 3000], [0.02, 1600], [0.02, 1000]]))
 
-    print(evaluator.evaluate_configs([[0.03, 400], [0.03, 100]]))
+    print(evaluator.evaluate_configs([[0.03, 400]], 0, 1800))
