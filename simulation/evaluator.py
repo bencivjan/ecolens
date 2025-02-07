@@ -54,6 +54,7 @@ class Evaluator:
             frame = cv2.imread(os.path.join(self.ground_truth_dir, frame_name))
             if frame is None:
                 raise AssertionError(f'Unable to read image from {self.ground_truth_dir}')
+            frame = self.modify_frame_bitrate(frame, self.MAX_BITRATE)
             # READ AS H264
             # frame = decode_from_path(self.decoder, self.ground_truth_dir, frame_name)
 

@@ -18,11 +18,12 @@ from trieste.experimental.plotting import plot_mobo_points_in_obj_space
 from evaluator import Evaluator
 from utils import remove_tensor_duplicates
 from collections import deque
+from itertools import islice
 
 # Implement multi-objective Bayesian optimization for online video configuration updates
 class VideoBayesianOpt:
 
-    def __init__(self, search_space, batch_size, target_accuracy=0.90, data_window_size=20):
+    def __init__(self, search_space, batch_size, target_accuracy=0.90, data_window_size=20, round_size=10):
 
         self.num_objectives = 2
         self.search_space = DiscreteSearchSpace(tf.constant(search_space, dtype=tf.float64))
@@ -33,6 +34,7 @@ class VideoBayesianOpt:
         self.target_accuracy = target_accuracy
 
         self.data_window_size = data_window_size
+        self.round_size = round_size
         self.data_window = deque(maxlen=self.data_window_size)
         self.query2observation = {}
 
@@ -41,12 +43,14 @@ class VideoBayesianOpt:
         accuracy_df = pd.read_csv(accuracy_file)
         energy_df = pd.read_csv(energy_file)
         merged_df = pd.merge(accuracy_df, energy_df, on=["Frequency", "Filter", "Threshold", "Frame Bitrate"])
+
+        # Normalize the 'Average IoU' column
+        # TODO: Potentially remove this
+        # merged_df['Average IoU'] = merged_df['Average IoU'] / merged_df['Average IoU'].max()
+
         merged_df = merged_df.drop(columns=['FPS', 'Start Time', 'End Time'])
         merged_df = merged_df[(merged_df['Frequency'] == 1.5) & (merged_df['Filter'] == 'pixel')]
         merged_df = merged_df.drop(columns=['Frequency', 'Filter'])
-
-        # Normalize the 'Average IoU' column
-        merged_df['Average IoU'] = merged_df['Average IoU'] / merged_df['Average IoU'].max()
 
         return merged_df
     
@@ -70,12 +74,16 @@ class VideoBayesianOpt:
         # non_dominated returns pareto of minimized objectives, so negate accuracy
         _, mask = non_dominated(tf.stack([observations[:,0], -observations[:,1]], axis=1))
         query_points_pareto = query_points[mask]
+        print(f"Selected Pareto: {query_points_pareto}")
         observations_pareto = observations[mask]
 
+        remaining_query_points = query_points[~mask]
+        remaining_observations = observations[~mask]
+
         if len(query_points_pareto) < n:
-            sorted_energy_idcs = np.argsort(observations[:, 0])
-            sorted_query_points = query_points[sorted_energy_idcs]
-            sorted_observations = observations[sorted_energy_idcs]
+            sorted_energy_idcs = np.argsort(remaining_observations[:, 0])
+            sorted_query_points = remaining_query_points[sorted_energy_idcs]
+            sorted_observations = remaining_observations[sorted_energy_idcs]
 
             # TODO: Make sure there aren't duplicates
             best_query_points = np.concatenate([query_points_pareto, sorted_query_points[:n - len(query_points_pareto)]], axis=0)
@@ -121,7 +129,7 @@ class VideoBayesianOpt:
         self.ask_tell = AskTellOptimizer(self.search_space, data, self.model, acquisition_rule=self.rule, fit_model=True)
         return self.ask_tell.ask()
     
-    def tell_observations(self, configs, observations) -> None:
+    def tell_observations(self, configs: tf.Tensor, observations: tf.Tensor) -> None:
         for config, observation in zip(configs, observations):
             config, observation = tuple(config.numpy()), tuple(observation.numpy())
             self.data_window.append(config)
@@ -137,9 +145,10 @@ class VideoBayesianOpt:
         self.data_window = result
 
     def get_recommended_configuration(self, target_accuracy):
-        # TODO: Only select from most recently observed queries?
-        configs = np.array(self.data_window)
-        observations = np.array([self.query2observation[c] for c in self.data_window])
+        # Only select from observed queries in the last round
+        last_round = list(self.data_window)[-self.round_size:]
+        configs = np.array(last_round)
+        observations = np.array([self.query2observation[c] for c in last_round])
 
         valid_indices = observations[:, 1] >= target_accuracy
         configs, observations = configs[valid_indices], observations[valid_indices]

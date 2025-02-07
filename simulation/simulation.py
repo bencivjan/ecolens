@@ -30,11 +30,12 @@ class EcoLensSimulation:
         self.log_file = log_file
         if self.log_file:
             logging.basicConfig(filename=self.log_file, level=logging.INFO, format='%(message)s')
-            logging.info('Frame Range, Running Accuracy, Configuration')
+            logging.info('Frame Range, Running Accuracy, Round Accuracy, Configuration')
 
-    def run_verify_round(self, frame_range: range) -> float:
+    def run_verify_round(self, mbo: VideoBayesianOpt, frame_range: range) -> float:
         print(f'Verify round for configuration: {self.config}')
         accuracy = self.evaluator.evaluate_configs([self.config], frame_range.start, frame_range.stop)[0]
+        mbo.tell_observations(tf.constant([self.config]), tf.stack([mbo.get_config_profile_energy([self.config]), tf.constant([accuracy])], axis=1))
         print(f'Accuracy: {accuracy}')
         return accuracy
 
@@ -95,30 +96,32 @@ class EcoLensSimulation:
         while i < self.total_frames:
             print(f'Current range: {cur_range.start / self.fps}s to {cur_range.stop / self.fps}s')
             if not explore:
-                # exploit_accuracy = self.run_exploit_round(cur_range)
-                # running_accuracy += exploit_accuracy * (cur_range.stop - cur_range.start)
-                prev_range = cur_range
+                configuration_acc = self.run_exploit_round(cur_range)
+                running_accuracy += configuration_acc * (cur_range.stop - cur_range.start)
+                prev_range, prev_config = cur_range, self.config
                 cur_range = range(cur_range.stop, min(cur_range.stop + self.explore_time * self.fps, self.total_frames))
                 explore = True
             else: # explore
-                configuration_acc = self.run_verify_round(cur_range)
+                configuration_acc = self.run_verify_round(mbo, cur_range)
                 running_accuracy += configuration_acc * (cur_range.stop - cur_range.start)
 
                 # TODO: Iron out how many explore iterations to run
                 self.run_explore_round(mbo, cur_range, iterations=1)
+
+                prev_range, prev_config = cur_range, self.config # Save previous configuration for logging
                 self.select_configuration(mbo, target_accuracy)
-                prev_range = cur_range
                 cur_range = range(cur_range.stop, min(cur_range.stop + self.exploit_time * self.fps, self.total_frames))
                 explore = False
             i = cur_range.start
 
             if self.log_file:
                 avg_accuracy = running_accuracy / (prev_range.stop)
-                logging.info(f'{prev_range.start} - {prev_range.stop}, {avg_accuracy}, {self.config}')
+                logging.info(f'{prev_range.start} - {prev_range.stop}, {avg_accuracy}, {configuration_acc}, {prev_config}')
 
         print(f'Final accuracy: {running_accuracy / self.total_frames}')
 
         dataset = mbo.ask_tell.to_result().try_get_final_dataset()
+        logging.info(f'Final Dataset: {dataset}')
         print(f'Final Dataset: {dataset}')
         plot_mobo_points_in_obj_space(dataset.observations, num_init=self.num_init_points, xlabel="Energy", ylabel="Accuracy")
         plt.show()
