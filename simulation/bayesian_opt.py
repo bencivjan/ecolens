@@ -66,9 +66,14 @@ class VideoBayesianOpt:
         return tf.convert_to_tensor(energies)
 
     def get_n_best_configs(self, n, query_points: tf.Tensor, observations: tf.Tensor):
+        query_points, observations = query_points.numpy(), observations.numpy()
+
         accuracy_mask = observations[:, 1] >= self.target_accuracy
-        query_points = query_points[accuracy_mask].numpy()
-        observations = observations[accuracy_mask].numpy()
+
+        # If no profiled points meet the target accuracy, just build dataset disregarding accuracy
+        if tf.reduce_any(accuracy_mask) == True:
+            query_points = query_points[accuracy_mask]
+            observations = observations[accuracy_mask]
         print(f"Selecting best points from: {query_points, observations}")
 
         # non_dominated returns pareto of minimized objectives, so negate accuracy

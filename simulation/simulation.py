@@ -30,7 +30,7 @@ class EcoLensSimulation:
         self.log_file = log_file
         if self.log_file:
             logging.basicConfig(filename=self.log_file, level=logging.INFO, format='%(message)s')
-            logging.info('Frame Range, Running Accuracy, Round Accuracy, Configuration')
+            logging.info('Frame Range Start, Frame Range End, Running Accuracy, Round Accuracy, Configuration')
 
     def run_verify_round(self, mbo: VideoBayesianOpt, frame_range: range) -> float:
         print(f'Verify round for configuration: {self.config}')
@@ -116,7 +116,7 @@ class EcoLensSimulation:
 
             if self.log_file:
                 avg_accuracy = running_accuracy / (prev_range.stop)
-                logging.info(f'{prev_range.start} - {prev_range.stop}, {avg_accuracy}, {configuration_acc}, {prev_config}')
+                logging.info(f'({prev_range.start}, {prev_range.stop}, {avg_accuracy}, {configuration_acc}, {prev_config}),')
 
         print(f'Final accuracy: {running_accuracy / self.total_frames}')
 

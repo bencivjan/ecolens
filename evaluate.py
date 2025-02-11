@@ -7,6 +7,7 @@ import torch.cuda
 import time
 from ffenc_uiuc.h264_encoder import ffdec
 from utils import *
+from tqdm import tqdm
 
 def calculate_accuracy(ground_truth_dir, eval_dir, log_file=None):
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -25,7 +26,9 @@ def calculate_accuracy(ground_truth_dir, eval_dir, log_file=None):
     # ground_truth_output = cv2.VideoWriter('ground_truth_video.mp4', fourcc, 30.0, (1920, 1080))
     # eval_output = cv2.VideoWriter('eval_video.mp4', fourcc, 30.0, (1920, 1080))
 
-    for i, frame_name in enumerate(sort_nicely(os.listdir(ground_truth_dir))):
+    for i, frame_name in tqdm(enumerate(sort_nicely(os.listdir(ground_truth_dir))),
+                              total=len(os.listdir(ground_truth_dir)),
+                              desc=f'Evaluating {ground_truth_dir}'):
         frame_idx = name2index(frame_name)
 
         # Start ground truth and eval at the same frame
@@ -66,43 +69,43 @@ def calculate_accuracy(ground_truth_dir, eval_dir, log_file=None):
     return eval_iou
 
 if __name__ == '__main__':
-    # IMAGE_DIR = os.path.join(os.path.dirname(__file__), 'filter-images/JH/')
-    # GROUND_TRUTH_DIR = f'{os.path.dirname(__file__)}/filter-images/ground-truth-JH'
-    # LOG_FILE = f'{os.path.dirname(__file__)}/accuracy-JH-dynamic-1.5-1.8-{time.time()}.csv'
+    IMAGE_DIR = os.path.join(os.path.dirname(__file__), 'filter-images/JH/')
+    GROUND_TRUTH_DIR = f'{os.path.dirname(__file__)}/filter-images/ground-truth-JH'
+    LOG_FILE = f'{os.path.dirname(__file__)}/accuracy-JH-2-{time.time()}.csv'
 
-    # print(IMAGE_DIR)
-    # with open(LOG_FILE, mode='w') as file:
-    #     file.write('Frequency,Filter,Threshold,Frame Bitrate,Average IoU\n')
+    print(IMAGE_DIR)
+    with open(LOG_FILE, mode='w') as file:
+        file.write('Frequency,Filter,Threshold,Frame Bitrate,Average IoU\n')
 
-    # # batch_names = ['1.5', '1.8', '2.1', '2.4']
-    # batch_names = ['1.5', '1.8']
+    # batch_names = ['1.5', '1.8', '2.1', '2.4']
+    batch_names = ['1.5', '1.8']
 
-    # for batch_name in batch_names:
-    #     BATCH_DIR = os.path.join(IMAGE_DIR, batch_name)
-    #     for img_directory in sort_nicely(os.listdir(BATCH_DIR)):
+    for batch_name in batch_names:
+        BATCH_DIR = os.path.join(IMAGE_DIR, batch_name)
+        for img_directory in sort_nicely(os.listdir(BATCH_DIR)):
 
-    #         img_path = os.path.join(BATCH_DIR, img_directory)
+            img_path = os.path.join(BATCH_DIR, img_directory)
 
-    #         if os.path.isdir(img_path):
-    #             print(img_directory)
-    #             iou_ = calculate_accuracy(GROUND_TRUTH_DIR, img_path)
-    #             print(f'Batch {batch_name}: {img_directory} IoU: {round(iou_.mean(), 4)}')
-    #             with open(LOG_FILE, mode='a') as file:
-    #                 freq, filter, thresh, bitrate = img_directory.split('-')
-    #                 file.write(f'{freq},{filter},{thresh},{bitrate},{iou_.mean():.4f}\n')
+            if os.path.isdir(img_path):
+                print(img_directory)
+                iou_ = calculate_accuracy(GROUND_TRUTH_DIR, img_path)
+                print(f'Batch {batch_name}: {img_directory} IoU: {round(iou_.mean(), 4)}')
+                with open(LOG_FILE, mode='a') as file:
+                    freq, filter, thresh, bitrate = img_directory.split('-')
+                    file.write(f'{freq},{filter},{thresh},{bitrate},{iou_.mean():.4f}\n')
             
 
     # SINGLE CONFIG
-    LOG_FILE = f'{os.path.dirname(__file__)}/JH-night-full.csv'
-    CHECKPOINT_LOG_FILE = f'{os.path.dirname(__file__)}/JH-night-full-accuracy-log.txt'
-    GROUND_TRUTH_DIR = f'{os.path.dirname(__file__)}/filter-images/ground-truth-JH-night-full'
+    # LOG_FILE = f'{os.path.dirname(__file__)}/JH-night-full.csv'
+    # CHECKPOINT_LOG_FILE = f'{os.path.dirname(__file__)}/JH-night-full-accuracy-log.txt'
+    # GROUND_TRUTH_DIR = f'{os.path.dirname(__file__)}/filter-images/ground-truth-JH-night-full'
 
-    # img_path = '/media/ben/UBUNTU 22_0/JH-night-full/1.5-pixel-0.0200-1000'
-    img_path = os.path.join(os.path.dirname(__file__), 'filter-images', 'JH-night-full-1.5-pixel-0.0100-2400')
-    iou_ = calculate_accuracy(GROUND_TRUTH_DIR, img_path, CHECKPOINT_LOG_FILE)
-    print(f'{os.path.basename(img_path)} IoU: {round(iou_.mean(), 4)}')
-    with open(LOG_FILE, mode='a') as file:
-        file.write('Frequency,Filter,Threshold,Frame Bitrate,Average IoU\n')
-        img_dir_name = os.path.basename(img_path)
-        _, _, freq, filter, thresh, bitrate = img_dir_name.split('-')
-        file.write(f'{freq},{filter},{thresh},{bitrate},{iou_.mean():.4f}\n')
+    # # img_path = '/media/ben/UBUNTU 22_0/JH-night-full/1.5-pixel-0.0200-1000'
+    # img_path = os.path.join(os.path.dirname(__file__), 'filter-images', 'JH-night-full-1.5-pixel-0.0100-2400')
+    # iou_ = calculate_accuracy(GROUND_TRUTH_DIR, img_path, CHECKPOINT_LOG_FILE)
+    # print(f'{os.path.basename(img_path)} IoU: {round(iou_.mean(), 4)}')
+    # with open(LOG_FILE, mode='a') as file:
+    #     file.write('Frequency,Filter,Threshold,Frame Bitrate,Average IoU\n')
+    #     img_dir_name = os.path.basename(img_path)
+    #     _, _, freq, filter, thresh, bitrate = img_dir_name.split('-')
+    #     file.write(f'{freq},{filter},{thresh},{bitrate},{iou_.mean():.4f}\n')

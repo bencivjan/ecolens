@@ -43,6 +43,7 @@ class Evaluator:
         return self.h264_processor_dict[bitrate][1].process_frame(enc_frame)
 
     def evaluate_configs(self, configs, start_frame, end_frame):
+        frames = []
         if len(configs) == 0:
             return []
         video_configs = [VideoConfiguration(thresh=float(c[0]), frame_bitrate=int(c[1])) for c in configs]
@@ -54,15 +55,19 @@ class Evaluator:
             frame = cv2.imread(os.path.join(self.ground_truth_dir, frame_name))
             if frame is None:
                 raise AssertionError(f'Unable to read image from {self.ground_truth_dir}')
-            frame = self.modify_frame_bitrate(frame, self.MAX_BITRATE)
+
+            compressed_frame = self.modify_frame_bitrate(frame, self.MAX_BITRATE)
             # READ AS H264
             # frame = decode_from_path(self.decoder, self.ground_truth_dir, frame_name)
 
-            bb = self.model.predict(frame, verbose=False)[0].boxes
+            bb = self.model.predict(compressed_frame, verbose=False)[0].boxes
 
             # If frame satisfies filter, run inference & update bounding box
             for j, vc in enumerate(video_configs):
-                vc.features = vc.filter.get_frame_feature(frame)
+                vc.features = vc.filter.get_frame_feature(frame) # Get frame features of full frame
+
+                # Modify frame bitrate after getting frame features to match simulation
+                # frame = self.modify_frame_bitrate(frame, self.MAX_BITRATE)
 
                 if vc.prev_features is None:
                     vc.prev_features = vc.features
@@ -77,11 +82,12 @@ class Evaluator:
                         temp_frame = self.modify_frame_bitrate(frame, vc.frame_bitrate)
                         vc.bb = self.model.predict(temp_frame, verbose=False)[0].boxes
                     vc.prev_features = vc.features
+                    frames.append(frame_name)
 
                 # Calculate IoU based on bounding boxes
                 iou = frame_iou_dynamic(bb, vc.bb)
                 ious[j].append(iou)
-
+        print(frames)
         return [sum(config_iou) / len(config_iou) for config_iou in ious]
     
 
@@ -97,4 +103,4 @@ if __name__ == "__main__":
     # TEST MIXED BITRATE
     # print(evaluator.evaluate_configs([[0.01, 3000], [0.01, 1000], [0.02, 3000], [0.02, 1600], [0.02, 1000]]))
 
-    print(evaluator.evaluate_configs([[0.03, 400]], 0, 1800))
+    print(evaluator.evaluate_configs([[0.01, 3000]], 0, 1800))
