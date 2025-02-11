@@ -1,6 +1,9 @@
+import sys, os
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(parent_dir)
+
 import cv2
 import subprocess
-import os
 import numpy as np
 from time import sleep,time,localtime,strftime,monotonic
 from datetime import datetime
@@ -45,7 +48,7 @@ def throttle(target_fps, start_time):
     else:
         return False
     
-def read_frames(video: str, shmem_name: str, cur_frame_idx: mp.Value, target_fps: int, ret_queue: mp.Queue, frame_drop: mp.Queue):
+def read_frames(video: str, shmem_name: str, cur_frame_idx: mp.Value, target_fps: int, width: int, height: int, ret_queue: mp.Queue, frame_drop: mp.Queue):
     existing_shm = SharedMemory(name=shmem_name)
     shared_array = np.ndarray((height, width, 3), dtype=np.uint8, buffer=existing_shm.buf)
     total_frames_set = set() # Set to keep track of frame dropping
@@ -192,7 +195,7 @@ def class2str(cls):
     else:
         raise Exception('Unknown class')
     
-def read_energy(TC66, start, energy_readings, out_file='TC66_'+strftime('%Y%m%d%H%M%S',localtime())+'.csv', interval=1):
+def read_energy(TC66, start, energy_readings, out_file='TC66_'+strftime('%Y%m%d%H%M%S',localtime())+'.csv', interval=1, verbose=True):
     if out_file:
         f = open(out_file,'w')
         f.write('Time[S],Volt[V],Current[A],Power[W]\n')
@@ -211,7 +214,9 @@ def read_energy(TC66, start, energy_readings, out_file='TC66_'+strftime('%Y%m%d%
 
             energy_readings.put(pd.Power)
 
-            print(s)
+            if verbose:
+                print(s)
+
             elapsed = (monotonic()-start) - now
             if elapsed < interval:
                 sleep(interval - elapsed)
@@ -229,12 +234,12 @@ def get_average_energy(energy_readings):
     
     return power_sum / num_readings if num_readings > 0 else 0
 
-if __name__ == '__main__':
+def main():
     print('Running')
 
     current_time = datetime.now()
-    LOG_FILE = f'./test-{current_time.strftime("%Y%m%d%H%M%S")}.csv'
-    VIDEO = './videos/jackson_hole_1min_1920x1080.nut'
+    LOG_FILE = f'./JH-night-energy-{current_time.strftime("%Y%m%d%H%M%S")}.csv'
+    VIDEO = './videos/JH_night_10min_1920x1080.mp4'
     # VIDEO = './videos/ny_driving.nut'
     FREQUENCIES = [1500000, 1800000, 2100000, 2400000]
     FILTERS = [PixelDiff, AreaDiff, EdgeDiff]
@@ -249,7 +254,7 @@ if __name__ == '__main__':
 
     FRAME_BITRATES = [100, 400, 700, 1000, 1300, 1600, 1900, 2100, 2400, 2700, 3000] # kbps
 
-    TC66 = TC66C('/dev/ttyACM0')
+    TC66 = TC66C('/dev/ttyACM1')
     cap = cv2.VideoCapture(VIDEO)
     target_fps = 25
     target_frame_duration = 1.0 / target_fps
@@ -273,12 +278,9 @@ if __name__ == '__main__':
                                       kwargs = {'out_file': None,
                                                 'interval': 0.25}).start()
 
-    # gt_dir = os.path.join(os.path.dirname(__file__), 'ground-truth-jpg')
-    # generate_ground_truth(cap, width, height, 3000, 30, gt_dir)
-
     try:
-        for frequency in FREQUENCIES:
-        # for frequency in [2400000]:
+        # for frequency in FREQUENCIES:
+        for frequency in [1500000]:
 
             set_cpu_freq(frequency)
 
@@ -294,8 +296,8 @@ if __name__ == '__main__':
             return_values = mp.Queue()
             frame_drop = mp.Queue() # For frame index sets at each step
 
-            for filter in FILTERS:
-            # for filter in [PixelDiff, AreaDiff]:
+            # for filter in FILTERS:
+            for filter in [PixelDiff]:
 
                 if filter == PixelDiff:
                     thresholds = PIXEL_THRESHOLDS
@@ -306,20 +308,20 @@ if __name__ == '__main__':
                 else:
                     raise ValueError('ERROR: Filter not recognized')
 
-                for threshold in thresholds:
-                # for threshold in [0.00]:
+                # for threshold in thresholds:
+                for threshold in [0.01]:
 
                     diff_processor = filter(thresh=threshold)
 
-                    for frame_bitrate in FRAME_BITRATES:
-                    # for frame_bitrate in [3000]:
+                    # for frame_bitrate in FRAME_BITRATES:
+                    for frame_bitrate in [2400]:
                         bitrate = frame_bitrate * fps
                         save_dir = os.path.join(os.path.dirname(__file__), 'flashdrive', f'{frequency / 1_000_000}', f'{frequency / 1_000_000}-{class2str(filter)}-{threshold:.4f}-{frame_bitrate}')
                         os.makedirs(save_dir, exist_ok=True)
 
                         cur_exp_start_time = monotonic()
 
-                        read_frames_pid = mp.Process(target=read_frames, args=(VIDEO, filter_shm.name, filter_frame_idx, target_fps, return_values, frame_drop))
+                        read_frames_pid = mp.Process(target=read_frames, args=(VIDEO, filter_shm.name, filter_frame_idx, target_fps, width, height, return_values, frame_drop))
                         filter_frames_pid = mp.Process(target=filter_frames, args=(diff_processor, filter_shm.name, filter_frame_idx, encoding_shm.name, encoding_frame_idx,  width, height, frame_drop))
                         encode_frames_pid = mp.Process(target=encode_frames, args=(encoding_shm.name, encoding_frame_idx, bitrate, fps, width, height, save_queue, frame_drop))
 
@@ -389,3 +391,18 @@ if __name__ == '__main__':
         if encoding_shm:
             encoding_shm.close()
             encoding_shm.unlink()
+
+if __name__ == '__main__':
+    # === RUN DRIVER ===
+    # main()
+
+    # === GENERATE GROUND TRUTH ===
+    VIDEO = os.path.join(os.path.dirname(__file__), '../videos/JH_10min_1920x1080.mp4')
+    cap = cv2.VideoCapture(VIDEO)
+
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+
+    gt_dir = os.path.join(os.path.dirname(__file__), '..', 'ground-truth-videos', 'JH-full')
+    generate_ground_truth(cap, width, height, 3000, 30, gt_dir)
