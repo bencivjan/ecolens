@@ -95,7 +95,8 @@ class StreamSimulator:
                 average_energy = get_average_energy(energy_readings)
                 logging.info(f'({start}, {end}, ({threshold}, {bitrate}), {average_energy}),')
 
-            # This function won't return because of the energy reading process, use CTL C
+            energy_pid.terminate()
+            energy_pid.join()
             return
             
         finally:
@@ -145,7 +146,6 @@ if __name__ == '__main__':
 
     sleep(5)
 
+    LOG = f'{os.path.dirname(__file__)}/ecolens-JH-day-0.85-energy.csv'
     simulator = StreamSimulator(JH_DAY, LOG)
     simulator.simulate(jh_day_85)
-
-    print("Exiting")
