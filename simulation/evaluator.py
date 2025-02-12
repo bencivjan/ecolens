@@ -43,7 +43,6 @@ class Evaluator:
         return self.h264_processor_dict[bitrate][1].process_frame(enc_frame)
 
     def evaluate_configs(self, configs, start_frame, end_frame):
-        frames = []
         if len(configs) == 0:
             return []
         video_configs = [VideoConfiguration(thresh=float(c[0]), frame_bitrate=int(c[1])) for c in configs]
@@ -82,12 +81,10 @@ class Evaluator:
                         temp_frame = self.modify_frame_bitrate(frame, vc.frame_bitrate)
                         vc.bb = self.model.predict(temp_frame, verbose=False)[0].boxes
                     vc.prev_features = vc.features
-                    frames.append(frame_name)
 
                 # Calculate IoU based on bounding boxes
                 iou = frame_iou_dynamic(bb, vc.bb)
                 ious[j].append(iou)
-        print(frames)
         return [sum(config_iou) / len(config_iou) for config_iou in ious]
     
 

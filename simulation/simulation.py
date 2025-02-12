@@ -4,6 +4,7 @@ sys.path.append(parent_dir)
 
 import logging
 import tensorflow as tf
+import numpy as np
 import matplotlib.pyplot as plt
 from trieste.experimental.plotting import plot_mobo_points_in_obj_space
 from evaluator import Evaluator
@@ -44,11 +45,11 @@ class EcoLensSimulation:
             prev_dataset = mbo.ask_tell.to_result().try_get_final_dataset()
             # Since the MBO dataset has negative accuracy, we must negate to make them positive
             best_points = mbo.get_n_best_configs(6, prev_dataset.query_points, tf.stack([prev_dataset.observations[:, 0], -prev_dataset.observations[:, 1]], axis=1))[0]
-            mbo_suggestions = remove_tensor_duplicates(mbo.ask_for_suggestions())
+            mbo_suggestions = mbo.ask_for_suggestions()
             print(f'Best Points: {best_points}')
             print(f'Suggestions: {mbo_suggestions}')
 
-            queries = tf.concat([best_points, mbo_suggestions], axis=0)
+            queries = remove_tensor_duplicates(tf.concat([best_points, mbo_suggestions], axis=0))
             
             new_accuracies = self.evaluator.evaluate_configs(queries, frame_range.start, frame_range.stop)
             print(f'New Accuracies: {new_accuracies}')
@@ -126,6 +127,59 @@ class EcoLensSimulation:
         plot_mobo_points_in_obj_space(dataset.observations, num_init=self.num_init_points, xlabel="Energy", ylabel="Accuracy")
         plt.show()
 
+class NoReprofileSimulation():
+    def __init__(self, frame_dir, energy_profile, accuracy_profile, log_file=None) -> None:
+        self.frame_dir = frame_dir
+        self.energy_profile = energy_profile
+        self.accuracy_profile = accuracy_profile
+        self.fps = 30
+        self.total_frames = len(os.listdir(frame_dir))
+
+        self.evaluator = Evaluator(frame_dir, model_path=os.path.join(os.path.dirname(__file__), '../yolov8x.pt'))
+
+        self.log_file = log_file
+        if self.log_file:
+            logging.basicConfig(filename=self.log_file, level=logging.INFO, format='%(message)s')
+            logging.info('Frame Range Start, Frame Range End, Running Accuracy, Round Accuracy, Configuration')
+
+    def get_recommended_configuration(self, profiling_df, target_accuracy: float):
+        configs = np.array([[x, y] for x, y in zip(profiling_df['Threshold'], profiling_df['Frame Bitrate'])])
+        observations = np.array([[x, y] for x, y in zip(profiling_df['Avg Energy'], profiling_df['Average IoU'])])
+
+        mask = observations[:, 1] >= target_accuracy
+
+        configs, observations = configs[mask], observations[mask]
+        sorted_idcs = observations[:,0].argsort()
+        
+        return tuple(configs[sorted_idcs][0])
+
+    def run(self, target_accuracy: float) -> None:
+        # Get best configuration from profiling
+        profiling_df = VideoBayesianOpt.read_profiling_data(self.energy_profile, self.accuracy_profile)
+        best_config = self.get_recommended_configuration(profiling_df, target_accuracy)
+        print(f'Best configuration: {best_config}')
+
+        i = 0
+        time_increment = 60
+        cur_range = range(0, 60 * self.fps)
+        running_accuracy = 0
+
+        while i < self.total_frames:
+            print(f'Current range: {cur_range.start / self.fps}s to {cur_range.stop / self.fps}s')
+
+            configuration_acc = self.evaluator.evaluate_configs([best_config], cur_range.start, cur_range.stop)[0]
+            running_accuracy += configuration_acc * (cur_range.stop - cur_range.start)
+            prev_range = cur_range
+            cur_range = range(cur_range.stop, min(cur_range.stop + time_increment * self.fps, self.total_frames))
+
+            i = cur_range.start
+
+            if self.log_file:
+                avg_accuracy = running_accuracy / (prev_range.stop)
+                logging.info(f'({prev_range.start}, {prev_range.stop}, {avg_accuracy}, {configuration_acc}, {best_config}),')
+
+        print(f'Final accuracy: {running_accuracy / self.total_frames}')
+
 if __name__ == "__main__":
     import argparse
 
@@ -150,5 +204,11 @@ if __name__ == "__main__":
                                 log_file=args.log_file)
         simulation.run(target_accuracy=args.target_accuracy)
     
+    elif args.simulation == 'noreprofile':
+        simulation = NoReprofileSimulation(frame_dir=args.frame_dir,
+                                energy_profile=args.energy_profile,
+                                accuracy_profile=args.accuracy_profile,
+                                log_file=args.log_file)
+        simulation.run(target_accuracy=args.target_accuracy)
     else:
         raise NotImplementedError(f'Simulation {args.simulation} not implemented')

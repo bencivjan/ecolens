@@ -105,7 +105,8 @@ class VideoBayesianOpt:
         query_points = tf.constant([[x, y] for x, y in zip(self.profiling_df['Threshold'], self.profiling_df['Frame Bitrate'])], dtype=tf.float64)
         observations = tf.constant([[x, y] for x, y in zip(self.profiling_df['Avg Energy'], self.profiling_df['Average IoU'])], dtype=tf.float64)
 
-        best_configs, best_observations = self.get_n_best_configs(self.data_window_size, query_points, observations)
+        best_configs, best_observations = self.get_n_best_configs(self.round_size, query_points, observations)
+        # best_configs, best_observations = self.get_n_best_configs(self.data_window_size, query_points, observations)
         print(f'Best Configs: {best_configs}')
         print(f'Best Observations: {best_observations}')
 
