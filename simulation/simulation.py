@@ -31,7 +31,7 @@ class EcoLensSimulation:
         self.log_file = log_file
         if self.log_file:
             logging.basicConfig(filename=self.log_file, level=logging.INFO, format='%(message)s')
-            logging.info('Frame Range Start, Frame Range End, Running Accuracy, Round Accuracy, Configuration')
+            logging.info('Frame Range Start, Frame Range End, Configuration, Running Accuracy, Round Accuracy')
 
     def run_verify_round(self, mbo: VideoBayesianOpt, frame_range: range) -> float:
         print(f'Verify round for configuration: {self.config}')
@@ -117,7 +117,7 @@ class EcoLensSimulation:
 
             if self.log_file:
                 avg_accuracy = running_accuracy / (prev_range.stop)
-                logging.info(f'({prev_range.start}, {prev_range.stop}, {avg_accuracy}, {configuration_acc}, {prev_config}),')
+                logging.info(f'({prev_range.start}, {prev_range.stop}, {prev_config}, {avg_accuracy}, {configuration_acc}),')
 
         print(f'Final accuracy: {running_accuracy / self.total_frames}')
 
@@ -140,7 +140,7 @@ class NoReprofileSimulation():
         self.log_file = log_file
         if self.log_file:
             logging.basicConfig(filename=self.log_file, level=logging.INFO, format='%(message)s')
-            logging.info('Frame Range Start, Frame Range End, Running Accuracy, Round Accuracy, Configuration')
+            logging.info('Frame Range Start, Frame Range End, Configuration, Running Accuracy, Round Accuracy')
 
     def get_recommended_configuration(self, profiling_df, target_accuracy: float):
         configs = np.array([[x, y] for x, y in zip(profiling_df['Threshold'], profiling_df['Frame Bitrate'])])
@@ -176,7 +176,7 @@ class NoReprofileSimulation():
 
             if self.log_file:
                 avg_accuracy = running_accuracy / (prev_range.stop)
-                logging.info(f'({prev_range.start}, {prev_range.stop}, {avg_accuracy}, {configuration_acc}, {best_config}),')
+                logging.info(f'({prev_range.start}, {prev_range.stop}, {best_config}, {avg_accuracy}, {configuration_acc}),')
 
         print(f'Final accuracy: {running_accuracy / self.total_frames}')
 
