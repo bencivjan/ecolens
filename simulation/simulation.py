@@ -180,6 +180,41 @@ class NoReprofileSimulation():
 
         print(f'Final accuracy: {running_accuracy / self.total_frames}')
 
+class ConfigSimulation():
+    def __init__(self, frame_dir, log_file=None) -> None:
+        self.frame_dir = frame_dir
+        self.fps = 30
+        self.total_frames = len(os.listdir(frame_dir))
+
+        self.evaluator = Evaluator(frame_dir, model_path=os.path.join(os.path.dirname(__file__), '../yolov8x.pt'))
+
+        self.log_file = log_file
+        if self.log_file:
+            logging.basicConfig(filename=self.log_file, level=logging.INFO, format='%(message)s')
+            logging.info('Frame Range Start, Frame Range End, Running Accuracy, Round Accuracy, Configuration')
+
+    def run(self, config):
+        i = 0
+        time_increment = 60
+        cur_range = range(0, 60 * self.fps)
+        running_accuracy = 0
+
+        while i < self.total_frames:
+            print(f'Current range: {cur_range.start / self.fps}s to {cur_range.stop / self.fps}s')
+
+            configuration_acc = self.evaluator.evaluate_configs([config], cur_range.start, cur_range.stop)[0]
+            running_accuracy += configuration_acc * (cur_range.stop - cur_range.start)
+            prev_range = cur_range
+            cur_range = range(cur_range.stop, min(cur_range.stop + time_increment * self.fps, self.total_frames))
+
+            i = cur_range.start
+
+            if self.log_file:
+                avg_accuracy = running_accuracy / (prev_range.stop)
+                logging.info(f'({prev_range.start}, {prev_range.stop}, {config}, {avg_accuracy}, {configuration_acc}),')
+
+        print(f'Final accuracy: {running_accuracy / self.total_frames}')
+
 if __name__ == "__main__":
     import argparse
 
@@ -210,5 +245,8 @@ if __name__ == "__main__":
                                 accuracy_profile=args.accuracy_profile,
                                 log_file=args.log_file)
         simulation.run(target_accuracy=args.target_accuracy)
+    elif args.simulation == 'baseline':
+        simulation = ConfigSimulation(frame_dir=args.frame_dir, log_file=args.log_file)
+        simulation.run(config=(0.0, 3000))
     else:
         raise NotImplementedError(f'Simulation {args.simulation} not implemented')
