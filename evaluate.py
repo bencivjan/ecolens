@@ -55,7 +55,7 @@ def calculate_accuracy(ground_truth_dir, eval_dir, log_file=None):
         # ground_truth_output.write(ground_truth_result[0].plot())
         # eval_output.write(ground_truth_result[0].plot())
 
-        print(frame_idx, name2index(eval_dir_list[eval_dir_idx]))
+        # print(frame_idx, name2index(eval_dir_list[eval_dir_idx]))
 
         eval_iou[i] = frame_iou_dynamic(ground_truth_result[0].boxes, eval_result[0].boxes)
 
@@ -69,16 +69,16 @@ def calculate_accuracy(ground_truth_dir, eval_dir, log_file=None):
     return eval_iou
 
 if __name__ == '__main__':
-    IMAGE_DIR = os.path.join(os.path.dirname(__file__), 'filter-images/JH/')
-    GROUND_TRUTH_DIR = f'{os.path.dirname(__file__)}/filter-images/ground-truth-JH'
-    LOG_FILE = f'{os.path.dirname(__file__)}/accuracy-JH-2-{time.time()}.csv'
+    IMAGE_DIR = os.path.join(os.path.dirname(__file__), 'filter-images/Alma/')
+    GROUND_TRUTH_DIR = f'{os.path.dirname(__file__)}/filter-images/ground-truth-Alma'
+    LOG_FILE = f'{os.path.dirname(__file__)}/accuracy-Alma-{time.time()}.csv'
 
     print(IMAGE_DIR)
     with open(LOG_FILE, mode='w') as file:
         file.write('Frequency,Filter,Threshold,Frame Bitrate,Average IoU\n')
 
     # batch_names = ['1.5', '1.8', '2.1', '2.4']
-    batch_names = ['1.5', '1.8']
+    batch_names = ['.']
 
     for batch_name in batch_names:
         BATCH_DIR = os.path.join(IMAGE_DIR, batch_name)

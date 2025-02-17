@@ -74,7 +74,7 @@ class Evaluator:
                 if not vc.bb:
                     vc.bb = bb
 
-                if dis > vc.filter.thresh:
+                if dis >= vc.filter.thresh:
                     if vc.frame_bitrate == self.MAX_BITRATE:
                         vc.bb = bb
                     else:

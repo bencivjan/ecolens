@@ -50,6 +50,8 @@ class EcoLensSimulation:
             print(f'Suggestions: {mbo_suggestions}')
 
             queries = remove_tensor_duplicates(tf.concat([best_points, mbo_suggestions], axis=0))
+
+            print(f'Queries: {queries}')
             
             new_accuracies = self.evaluator.evaluate_configs(queries, frame_range.start, frame_range.stop)
             print(f'New Accuracies: {new_accuracies}')
