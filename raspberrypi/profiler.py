@@ -120,10 +120,11 @@ def filter_frames(diff_processor, filter_shmem_name: str, filter_frame_idx: mp.V
         # print(f'difference: {dis}')
         max_dis = max(dis, max_dis)
         min_dis = min(dis, min_dis)
+        
+        prev_idx = frame_idx # TODO: Move this out of if statement?
 
-        if dis > diff_processor.thresh:
+        if dis >= diff_processor.thresh:
             prev_feat = feat
-            prev_idx = frame_idx # TODO: Move this out of if statement?
             with encoding_frame_idx.get_lock():
                 encoding_frame_idx.value = frame_idx
                 encoding_shared_array[:,:,:] = frame
@@ -238,8 +239,8 @@ def main():
     print('Running')
 
     current_time = datetime.now()
-    LOG_FILE = f'./JH-night-energy-{current_time.strftime("%Y%m%d%H%M%S")}.csv'
-    VIDEO = './videos/JH_night_10min_1920x1080.mp4'
+    LOG_FILE = f'./Alma-energy-{current_time.strftime("%Y%m%d%H%M%S")}.csv'
+    VIDEO = '../videos/Alma_1min_1920x1080.mp4'
     # VIDEO = './videos/ny_driving.nut'
     FREQUENCIES = [1500000, 1800000, 2100000, 2400000]
     FILTERS = [PixelDiff, AreaDiff, EdgeDiff]
@@ -254,7 +255,7 @@ def main():
 
     FRAME_BITRATES = [100, 400, 700, 1000, 1300, 1600, 1900, 2100, 2400, 2700, 3000] # kbps
 
-    TC66 = TC66C('/dev/ttyACM1')
+    TC66 = TC66C('/dev/ttyACM0')
     cap = cv2.VideoCapture(VIDEO)
     target_fps = 25
     target_frame_duration = 1.0 / target_fps
@@ -262,8 +263,6 @@ def main():
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = int(cap.get(cv2.CAP_PROP_FPS))
-    # encoder = ffenc(width, height, fps)
-    # decoder = ffdec()
 
     with open(LOG_FILE, mode='w') as file:
         file.write('Frequency,Filter,Threshold,Frame Bitrate,FPS,Start Time,End Time,Avg Energy\n')
@@ -308,15 +307,15 @@ def main():
                 else:
                     raise ValueError('ERROR: Filter not recognized')
 
-                # for threshold in thresholds:
-                for threshold in [0.01]:
+                for threshold in thresholds:
+                # for threshold in [0.01]:
 
                     diff_processor = filter(thresh=threshold)
 
-                    # for frame_bitrate in FRAME_BITRATES:
-                    for frame_bitrate in [2400]:
+                    for frame_bitrate in FRAME_BITRATES:
+                    # for frame_bitrate in [2400]:
                         bitrate = frame_bitrate * fps
-                        save_dir = os.path.join(os.path.dirname(__file__), 'flashdrive', f'{frequency / 1_000_000}', f'{frequency / 1_000_000}-{class2str(filter)}-{threshold:.4f}-{frame_bitrate}')
+                        save_dir = os.path.join(os.path.dirname(__file__), '..', 'flashdrive', f'Alma', f'{frequency / 1_000_000}-{class2str(filter)}-{threshold:.4f}-{frame_bitrate}')
                         os.makedirs(save_dir, exist_ok=True)
 
                         cur_exp_start_time = monotonic()
@@ -394,15 +393,15 @@ def main():
 
 if __name__ == '__main__':
     # === RUN DRIVER ===
-    # main()
+    main()
 
     # === GENERATE GROUND TRUTH ===
-    VIDEO = os.path.join(os.path.dirname(__file__), '../videos/JH_10min_1920x1080.mp4')
-    cap = cv2.VideoCapture(VIDEO)
+    # VIDEO = os.path.join(os.path.dirname(__file__), '../videos/Alma_1min_1920x1080.mp4')
+    # cap = cv2.VideoCapture(VIDEO)
 
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    # width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    # height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    # fps = int(cap.get(cv2.CAP_PROP_FPS))
 
-    gt_dir = os.path.join(os.path.dirname(__file__), '..', 'ground-truth-videos', 'JH-full')
-    generate_ground_truth(cap, width, height, 3000, 30, gt_dir)
+    # gt_dir = os.path.join(os.path.dirname(__file__), '..', 'flashdrive', 'ground-truth-videos', 'Alma')
+    # generate_ground_truth(cap, width, height, 3000, 30, gt_dir)
