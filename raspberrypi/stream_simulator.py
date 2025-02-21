@@ -12,7 +12,7 @@ from profiler import set_cpu_freq, throttle, filter_frames, encode_frames, \
                         read_energy, get_average_energy
 from utils import sort_nicely
 from time import sleep,time,localtime,strftime,monotonic
-from diff_processor import PixelDiff
+from diff_processor import PixelDiff, EdgeDiff
 from TC66C import TC66C
 
 class StreamSimulator:
@@ -29,7 +29,7 @@ class StreamSimulator:
             np.save(filename, frame)
             frame, idx = save_queue.get()
 
-    def simulate(self, config_list):
+    def simulate(self, config_list, processor=PixelDiff):
         logging.basicConfig(filename=self.log_file, level=logging.INFO, format='%(message)s', force=True)
         logging.info('Frame Range Start, Frame Range End, Configuration, Average Energy')
 
@@ -67,8 +67,8 @@ class StreamSimulator:
             for start, end, (threshold, bitrate) in config_list:
                 threshold, bitrate = float(threshold), int(bitrate)
                 print(threshold, bitrate)
-                diff_processor = PixelDiff(thresh=threshold)
-                filter_frames_pid = mp.Process(target=filter_frames, args=(diff_processor, filter_shm.name, filter_frame_idx, encoding_shm.name, encoding_frame_idx,  width, height, frame_drop))
+                filter = processor(thresh=threshold)
+                filter_frames_pid = mp.Process(target=filter_frames, args=(filter, filter_shm.name, filter_frame_idx, encoding_shm.name, encoding_frame_idx,  width, height, frame_drop))
                 encode_frames_pid = mp.Process(target=encode_frames, args=(encoding_shm.name, encoding_frame_idx, bitrate, fps, width, height, save_queue, frame_drop))
                 read_queue_pid = mp.Process(target=self.read_queue, args=(save_queue,))
 
@@ -135,11 +135,8 @@ class StreamSimulator:
 
             print('Done')
 
-if __name__ == '__main__':
-    JH_DAY = f'{os.path.dirname(__file__)}/../ground-truth-videos/JH-full'
-    JH_NIGHT = f'{os.path.dirname(__file__)}/../ground-truth-videos/JH-night-full'
-
-    set_cpu_freq(1500000)
+def simulate_JH_day():
+    JH_DAY = f'{os.path.dirname(__file__)}/../flashdrive/ground-truth-JH-full'
 
     # ecolens_jh_day_90 = [
     #     # start index, end index, threshold, bitrate
@@ -196,32 +193,68 @@ if __name__ == '__main__':
     # simulator.simulate(noreprofile_jh_day_90)
     # sleep(5)
 
-    ecolens_JH_night_90 = [
-        (0, 1800, (0.0, 400.0)),
-        (1800, 1950, (0.0, 400.0)),
-        (1950, 3750, (0.0, 400.0)),
-        (3750, 3900, (0.0, 400.0)),
-        (3900, 5700, (0.0, 3000.0)),
-        (5700, 5850, (0.0, 3000.0)),
-        (5850, 7650, (0.01, 2400.0)),
-        (7650, 7800, (0.01, 2400.0)),
-        (7800, 9600, (0.0, 3000.0)),
-        (9600, 9750, (0.0, 3000.0)),
-        (9750, 11550, (0.02, 400.0)),
-        (11550, 11700, (0.02, 400.0)),
-        (11700, 13500, (0.0, 3000.0)),
-        (13500, 13650, (0.0, 3000.0)),
-        (13650, 15450, (0.0, 1000.0)),
-        (15450, 15600, (0.0, 1000.0)),
-        (15600, 17400, (0.1, 3000.0)),
-        (17400, 17550, (0.1, 3000.0)),
-        (17550, 18030, (0.1, 100.0)),
+    reducto_jh_day_90 = [
+        (0, 1800, (0.0016, 3000.0)),
+        (1800, 1950, (0.0016, 3000.0)),
+        (1950, 3750, (0.0016, 3000.0)),
+        (3750, 3900, (0.0016, 3000.0)),
+        (3900, 5700, (0.0016, 3000.0)),
+        (5700, 5850, (0.0016, 3000.0)),
+        (5850, 7650, (0.0016, 3000.0)),
+        (7650, 7800, (0.0016, 3000.0)),
+        (7800, 9600, (0.0016, 3000.0)),
+        (9600, 9750, (0.0016, 3000.0)),
+        (9750, 11550, (0.0016, 3000.0)),
+        (11550, 11700, (0.0016, 3000.0)),
+        (11700, 13500, (0.0016, 3000.0)),
+        (13500, 13650, (0.0016, 3000.0)),
+        (13650, 15450, (0.0016, 3000.0)),
+        (15450, 15600, (0.0016, 3000.0)),
+        (15600, 17400, (0.0016, 3000.0)),
+        (17400, 17550, (0.0016, 3000.0)),
+        (17550, 18017, (0.0016, 3000.0)),
     ]
+    # LOG = f'{os.path.dirname(__file__)}/reducto-JH-day-0.9-energy-1.5.csv'
+    # simulator = StreamSimulator(JH_DAY, LOG)
+    # simulator.simulate(reducto_jh_day_90, processor=EdgeDiff)
 
-    LOG = f'{os.path.dirname(__file__)}/ecolens-JH-night-0.9-energy.csv'
-    simulator = StreamSimulator(JH_NIGHT, LOG)
-    simulator.simulate(ecolens_JH_night_90)
+    set_cpu_freq(2400000)
+    sleep(1)
+
+    LOG = f'{os.path.dirname(__file__)}/reducto-JH-day-0.9-energy-2.4.csv'
+    simulator = StreamSimulator(JH_DAY, LOG)
+    simulator.simulate(reducto_jh_day_90, processor=EdgeDiff)
     sleep(5)
+
+def simulate_JH_night():
+    JH_NIGHT = f'{os.path.dirname(__file__)}/../flashdrive/ground-truth-JH-night-full'
+
+    # ecolens_JH_night_90 = [
+    #     (0, 1800, (0.0, 400.0)),
+    #     (1800, 1950, (0.0, 400.0)),
+    #     (1950, 3750, (0.0, 400.0)),
+    #     (3750, 3900, (0.0, 400.0)),
+    #     (3900, 5700, (0.0, 3000.0)),
+    #     (5700, 5850, (0.0, 3000.0)),
+    #     (5850, 7650, (0.01, 2400.0)),
+    #     (7650, 7800, (0.01, 2400.0)),
+    #     (7800, 9600, (0.0, 3000.0)),
+    #     (9600, 9750, (0.0, 3000.0)),
+    #     (9750, 11550, (0.02, 400.0)),
+    #     (11550, 11700, (0.02, 400.0)),
+    #     (11700, 13500, (0.0, 3000.0)),
+    #     (13500, 13650, (0.0, 3000.0)),
+    #     (13650, 15450, (0.0, 1000.0)),
+    #     (15450, 15600, (0.0, 1000.0)),
+    #     (15600, 17400, (0.1, 3000.0)),
+    #     (17400, 17550, (0.1, 3000.0)),
+    #     (17550, 18030, (0.1, 100.0)),
+    # ]
+
+    # LOG = f'{os.path.dirname(__file__)}/ecolens-JH-night-0.9-energy.csv'
+    # simulator = StreamSimulator(JH_NIGHT, LOG)
+    # simulator.simulate(ecolens_JH_night_90)
+    # sleep(5)
 
     # noreprofile_jh_night_90 = [
     #     (0, 1800, (0.0, 400.0)),
@@ -241,8 +274,7 @@ if __name__ == '__main__':
     # simulator.simulate(noreprofile_jh_night_90)
     # sleep(5)
 
-
-    # baseline = [
+    # baseline_jh_night = [
     #     (0, 1800, (0.00, 3000.0)),
     #     (1800, 1950, (0.00, 3000.0)),
     #     (1950, 3750, (0.00, 3000.0)),
@@ -266,14 +298,161 @@ if __name__ == '__main__':
 
     # LOG = f'{os.path.dirname(__file__)}/baseline-JH-night-energy-1.5.csv'
     # simulator = StreamSimulator(JH_NIGHT, LOG)
-    # simulator.simulate(baseline)
+    # simulator.simulate(baseline_jh_night)
     # sleep(5)
-
 
     # set_cpu_freq(2400000)
     # sleep(1)
 
-    # LOG = f'{os.path.dirname(__file__)}/baseline-JH-day-energy-2.4.csv'
-    # simulator = StreamSimulator(JH_DAY, LOG)
-    # for _ in range(3):
-    #     simulator.simulate(baseline)
+    # LOG = f'{os.path.dirname(__file__)}/baseline-JH-night-energy-2.4.csv'
+    # simulator = StreamSimulator(JH_NIGHT, LOG)
+    # simulator.simulate(baseline_jh_night)
+
+    reducto_jh_night_90 = [
+        (0, 1800, (0.0, 3000)),
+        (1800, 3600, (0.0, 3000)),
+        (3600, 5400, (0.0, 3000)),
+        (5400, 7200, (0.0, 3000)),
+        (7200, 9000, (0.0, 3000)),
+        (9000, 10800, (0.0, 3000)),
+        (10800, 12600, (0.0, 3000)),
+        (12600, 14400, (0.0, 3000)),
+        (14400, 16200, (0.0, 3000)),
+        (16200, 18000, (0.0, 3000)),
+        (18000, 18030, (0.0, 3000)),
+    ]
+
+    set_cpu_freq(2400000)
+    sleep(1)
+
+    LOG = f'{os.path.dirname(__file__)}/reducto-JH-night-0.9-energy-2.4.csv'
+    simulator = StreamSimulator(JH_NIGHT, LOG)
+    simulator.simulate(reducto_jh_night_90, processor=EdgeDiff)
+
+
+def simulate_Alma():
+    ALMA = f'{os.path.dirname(__file__)}/../flashdrive/ground-truth-Alma-full'
+
+    # ecolens_Alma_90 = [
+    #     (0, 1800, (0.02, 2100.0)),
+    #     (1800, 1950, (0.02, 2100.0)),
+    #     (1950, 3750, (0.01, 1600.0)),
+    #     (3750, 3900, (0.01, 1600.0)),
+    #     (3900, 5700, (0.04, 3000.0)),
+    #     (5700, 5850, (0.04, 3000.0)),
+    #     (5850, 7650, (0.08, 1600.0)),
+    #     (7650, 7800, (0.08, 1600.0)),
+    #     (7800, 9600, (0.01, 3000.0)),
+    #     (9600, 9750, (0.01, 3000.0)),
+    #     (9750, 11550, (0.03, 1600.0)),
+    #     (11550, 11700, (0.03, 1600.0)),
+    #     (11700, 13500, (0.06, 1900.0)),
+    #     (13500, 13650, (0.06, 1900.0)),
+    #     (13650, 15450, (0.08, 1900.0)),
+    #     (15450, 15600, (0.08, 1900.0)),
+    #     (15600, 17400, (0.09, 2400.0)),
+    #     (17400, 17550, (0.09, 2400.0)),
+    #     (17550, 18002, (0.08, 1900.0)),
+    # ]
+
+    # sleep(5)
+    # LOG = f'{os.path.dirname(__file__)}/ecolens-Alma-0.9-energy.csv'
+    # simulator = StreamSimulator(ALMA, LOG)
+    # for _ in range(2):
+    #     simulator.simulate(ecolens_Alma_90)
+    #     sleep(5)
+
+    # noreprofile_Alma_90 = [
+    #     (0, 1800, (0.02, 2100.0)),
+    #     (1800, 3600, (0.02, 2100.0)),
+    #     (3600, 5400, (0.02, 2100.0)),
+    #     (5400, 7200, (0.02, 2100.0)),
+    #     (7200, 9000, (0.02, 2100.0)),
+    #     (9000, 10800, (0.02, 2100.0)),
+    #     (10800, 12600, (0.02, 2100.0)),
+    #     (12600, 14400, (0.02, 2100.0)),
+    #     (14400, 16200, (0.02, 2100.0)),
+    #     (16200, 18000, (0.02, 2100.0)),
+    #     (18000, 18002, (0.02, 2100.0)),
+    # ]
+
+    # LOG = f'{os.path.dirname(__file__)}/noreprofile-Alma-0.9-energy.csv'
+    # simulator = StreamSimulator(ALMA, LOG)
+    # for _ in range(2):
+    #     simulator.simulate(noreprofile_Alma_90)
+    #     sleep(5)
+
+    # baseline_Alma_1_5 = [
+    #     (0, 1800, (0.00, 3000.0)),
+    #     (1800, 3600, (0.00, 3000.0)),
+    #     (3600, 5400, (0.00, 3000.0)),
+    #     (5400, 7200, (0.00, 3000.0)),
+    #     (7200, 9000, (0.00, 3000.0)),
+    #     (9000, 10800, (0.00, 3000.0)),
+    #     (10800, 12600, (0.00, 3000.0)),
+    #     (12600, 14400, (0.00, 3000.0)),
+    #     (14400, 16200, (0.00, 3000.0)),
+    #     (16200, 18000, (0.00, 3000.0)),
+    #     (18000, 18002, (0.00, 3000.0)),
+    # ]
+
+    # LOG = f'{os.path.dirname(__file__)}/baseline-Alma-energy-1.5.csv'
+    # simulator = StreamSimulator(ALMA, LOG)
+    # for _ in range(2):
+    #     simulator.simulate(baseline_Alma_1_5)
+    #     sleep(5)
+
+    # baseline_Alma_2_4 = [
+    #     (0, 1800, (0.00, 3000.0)),
+    #     (1800, 3600, (0.00, 3000.0)),
+    #     (3600, 5400, (0.00, 3000.0)),
+    #     (5400, 7200, (0.00, 3000.0)),
+    #     (7200, 9000, (0.00, 3000.0)),
+    #     (9000, 10800, (0.00, 3000.0)),
+    #     (10800, 12600, (0.00, 3000.0)),
+    #     (12600, 14400, (0.00, 3000.0)),
+    #     (14400, 16200, (0.00, 3000.0)),
+    #     (16200, 18000, (0.00, 3000.0)),
+    #     (18000, 18002, (0.00, 3000.0)),
+    # ]
+
+    # set_cpu_freq(2400000)
+    # sleep(1)
+
+    # LOG = f'{os.path.dirname(__file__)}/baseline-Alma-energy-2.4.csv'
+    # simulator = StreamSimulator(ALMA, LOG)
+    # simulator.simulate(baseline_Alma_2_4)
+    # sleep(5)
+
+    reducto_alma_90 = [
+        (0, 1800, (0.004, 3000)),
+        (1800, 3600, (0.004, 3000)),
+        (3600, 5400, (0.004, 3000)),
+        (5400, 7200, (0.004, 3000)),
+        (7200, 9000, (0.004, 3000)),
+        (9000, 10800, (0.004, 3000)),
+        (10800, 12600, (0.004, 3000)),
+        (12600, 14400, (0.004, 3000)),
+        (14400, 16200, (0.004, 3000)),
+        (16200, 18000, (0.004, 3000)),
+        (18000, 18002, (0.004, 3000)),
+    ]
+
+    set_cpu_freq(2400000)
+    sleep(1)
+
+    LOG = f'{os.path.dirname(__file__)}/reducto-Alma-0.9-energy-2.4.csv'
+    simulator = StreamSimulator(ALMA, LOG)
+    simulator.simulate(reducto_alma_90, processor=EdgeDiff)
+
+if __name__ == '__main__':
+    set_cpu_freq(1500000)
+
+    # ========= JH Day Video ========
+    simulate_JH_day()
+
+    # ========= JH Night Video ========
+    # simulate_JH_night()
+
+    # ========= Alma Video ========
+    # simulate_Alma()
