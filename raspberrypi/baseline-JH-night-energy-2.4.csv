@@ -1,5 +1,4 @@
 Frame Range Start, Frame Range End, Configuration, Average Energy
-Frame Range Start, Frame Range End, Configuration, Average Energy
 (0, 1800, (0.0, 3000), 6.991750588235295),
 (1800, 1950, (0.0, 3000), 6.841773529411767),
 (1950, 3750, (0.0, 3000), 7.152838860759505),
@@ -19,7 +18,3 @@ Frame Range Start, Frame Range End, Configuration, Average Energy
 (15600, 17400, (0.0, 3000), 7.028864797913944),
 (17400, 17550, (0.0, 3000), 7.130300000000003),
 (17550, 18017, (0.0, 3000), 6.886461083743847),
-Frame Range Start, Frame Range End, Configuration, Average Energy
-(0, 1800, (0.0, 3000), 0.0),
-(1800, 1950, (0.0, 3000), 0.0),
-(1950, 3750, (0.0, 3000), 0.0),
