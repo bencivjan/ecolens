@@ -10,6 +10,8 @@ from trieste.experimental.plotting import plot_mobo_points_in_obj_space
 from evaluator import Evaluator
 from utils import remove_tensor_duplicates
 from bayesian_opt import VideoBayesianOpt
+from diff_processor import PixelDiff, EdgeDiff
+from time import monotonic
 
 class EcoLensSimulation:
     def __init__(self, frame_dir, energy_profile, accuracy_profile, explore_time=10, exploit_time=110, log_file=None) -> None:
@@ -19,7 +21,7 @@ class EcoLensSimulation:
                 self.search_space.append([thresh, br])
 
         self.batch_size = 4
-        self.evaluator = Evaluator(frame_dir, model_path=os.path.join(os.path.dirname(__file__), '../yolov8x.pt'))
+        self.evaluator = Evaluator(frame_dir, model_path=os.path.join(os.path.dirname(__file__), '../yolov8n.pt'))
         self.energy_profile = energy_profile
         self.accuracy_profile = accuracy_profile
         self.total_frames = len(os.listdir(frame_dir))
@@ -41,23 +43,34 @@ class EcoLensSimulation:
         return accuracy
 
     def run_explore_round(self, mbo: VideoBayesianOpt, frame_range: range, iterations: int):
+        explore_start_time = monotonic()
         for _ in range(iterations):
             prev_dataset = mbo.ask_tell.to_result().try_get_final_dataset()
             # Since the MBO dataset has negative accuracy, we must negate to make them positive
             best_points = mbo.get_n_best_configs(6, prev_dataset.query_points, tf.stack([prev_dataset.observations[:, 0], -prev_dataset.observations[:, 1]], axis=1))[0]
+
+            mbo_start_time = monotonic()
             mbo_suggestions = mbo.ask_for_suggestions()
+            mbo_suggestion_time = monotonic() - mbo_start_time
+
             print(f'Best Points: {best_points}')
             print(f'Suggestions: {mbo_suggestions}')
 
             queries = remove_tensor_duplicates(tf.concat([best_points, mbo_suggestions], axis=0))
 
             print(f'Queries: {queries}')
-            
+
+            evaluation_start_time = monotonic()
             new_accuracies = self.evaluator.evaluate_configs(queries, frame_range.start, frame_range.stop)
+            evaluation_time = monotonic() - evaluation_start_time
+
             print(f'New Accuracies: {new_accuracies}')
             est_energies = mbo.get_config_profile_energy(queries)
             print(f'Estimated Energies: {est_energies}')
             mbo.tell_observations(queries, tf.stack([est_energies, new_accuracies], axis=1))
+        explore_time = monotonic() - explore_start_time
+
+        return explore_time, mbo_suggestion_time, evaluation_time
 
         # For debugging
         # mbo.ask_for_suggestions()
@@ -95,6 +108,9 @@ class EcoLensSimulation:
         cur_range = range(0, self.exploit_time * self.fps)
 
         running_accuracy = 0
+        explore_times = []
+        mbo_suggestion_times = []
+        evaluation_times = []
 
         while i < self.total_frames:
             print(f'Current range: {cur_range.start / self.fps}s to {cur_range.stop / self.fps}s')
@@ -109,7 +125,11 @@ class EcoLensSimulation:
                 running_accuracy += configuration_acc * (cur_range.stop - cur_range.start)
 
                 # TODO: Iron out how many explore iterations to run
-                self.run_explore_round(mbo, cur_range, iterations=1)
+                explore_time, mbo_suggestion_time, evaluation_time = self.run_explore_round(mbo, cur_range, iterations=1)
+
+                explore_times.append(explore_time)
+                mbo_suggestion_times.append(mbo_suggestion_time)
+                evaluation_times.append(evaluation_time)
 
                 prev_range, prev_config = cur_range, self.config # Save previous configuration for logging
                 self.select_configuration(mbo, target_accuracy)
@@ -123,13 +143,17 @@ class EcoLensSimulation:
 
         print(f'Final accuracy: {running_accuracy / self.total_frames}')
 
+        logging.info(f'Avg Total Explore Time: {sum(explore_times) / len(explore_times)}')
+        logging.info(f'Avg MBO Suggestion Time: {sum(mbo_suggestion_times) / len(mbo_suggestion_times)}')
+        logging.info(f'Avg Config Evaluation Time: {sum(evaluation_times) / len(evaluation_times)}')
+
         dataset = mbo.ask_tell.to_result().try_get_final_dataset()
         logging.info(f'Final Dataset: {dataset}')
         print(f'Final Dataset: {dataset}')
-        plot_mobo_points_in_obj_space(dataset.observations, num_init=self.num_init_points, xlabel="Energy", ylabel="Accuracy")
-        plt.show()
+        # plot_mobo_points_in_obj_space(dataset.observations, num_init=self.num_init_points, xlabel="Energy", ylabel="Accuracy")
+        # plt.show()
 
-class NoReprofileSimulation():
+class NoReprofileSimulation:
     def __init__(self, frame_dir, energy_profile, accuracy_profile, log_file=None) -> None:
         self.frame_dir = frame_dir
         self.energy_profile = energy_profile
@@ -182,12 +206,13 @@ class NoReprofileSimulation():
 
         print(f'Final accuracy: {running_accuracy / self.total_frames}')
 
-class ConfigSimulation():
-    def __init__(self, frame_dir, log_file=None) -> None:
+class ConfigSimulation:
+    def __init__(self, frame_dir, processor, log_file=None) -> None:
         self.frame_dir = frame_dir
         self.fps = 30
         self.total_frames = len(os.listdir(frame_dir))
 
+        self.processor = processor
         self.evaluator = Evaluator(frame_dir, model_path=os.path.join(os.path.dirname(__file__), '../yolov8x.pt'))
 
         self.log_file = log_file
@@ -204,7 +229,7 @@ class ConfigSimulation():
         while i < self.total_frames:
             print(f'Current range: {cur_range.start / self.fps}s to {cur_range.stop / self.fps}s')
 
-            configuration_acc = self.evaluator.evaluate_configs([config], cur_range.start, cur_range.stop)[0]
+            configuration_acc = self.evaluator.evaluate_configs([config], cur_range.start, cur_range.stop, self.processor)[0]
             running_accuracy += configuration_acc * (cur_range.stop - cur_range.start)
             prev_range = cur_range
             cur_range = range(cur_range.stop, min(cur_range.stop + time_increment * self.fps, self.total_frames))
@@ -229,6 +254,8 @@ if __name__ == "__main__":
     parser.add_argument('--explore-time', '-x', default=5, type=int, help='Explore time in seconds')
     parser.add_argument('--exploit-time', '-y', default=60, type=int, help='Exploit time in seconds')
     parser.add_argument('--log-file', '-l', default=None, type=str, help='Log file')
+    parser.add_argument('--thresh', default=0.0, type=float)
+    parser.add_argument('--bitrate', default=3000, type=int)
 
     args = parser.parse_args()
 
@@ -248,7 +275,10 @@ if __name__ == "__main__":
                                 log_file=args.log_file)
         simulation.run(target_accuracy=args.target_accuracy)
     elif args.simulation == 'baseline':
-        simulation = ConfigSimulation(frame_dir=args.frame_dir, log_file=args.log_file)
+        simulation = ConfigSimulation(frame_dir=args.frame_dir, processor=PixelDiff, log_file=args.log_file)
         simulation.run(config=(0.0, 3000))
+    elif args.simulation == 'reducto':
+        simulation = ConfigSimulation(frame_dir=args.frame_dir, processor=EdgeDiff, log_file=args.log_file)
+        simulation.run(config=(args.thresh, args.bitrate))
     else:
         raise NotImplementedError(f'Simulation {args.simulation} not implemented')

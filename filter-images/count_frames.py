@@ -42,7 +42,7 @@ if __name__ == "__main__":
     accuracy_df = pd.read_csv(args.accuracy_profile)
 
     merged_df = pd.merge(accuracy_df, framecount_df, on=["Frequency", "Filter", "Threshold", "Frame Bitrate"])
-    merged_df = merged_df.loc[merged_df['Filter'] == 'edge']
+    merged_df = merged_df.loc[(merged_df['Filter'] == 'edge') & (merged_df['Frequency'] == 2.4)]
 
     config_thresh_df = pd.DataFrame(columns=['Frequency', 'Filter', 'Threshold', 'Frame Bitrate', 'Frame Count', 'Average IoU', 'Accuracy Threshold'])
 

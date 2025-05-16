@@ -10,14 +10,14 @@ import torch.cuda
 import time
 from tqdm import tqdm
 from ffenc_uiuc.h264_encoder import ffdec, ffenc
-from diff_processor import PixelDiff
+from diff_processor import PixelDiff, EdgeDiff
 from utils import frame_iou_dynamic, sort_nicely, name2index, decode_from_path
 
 class VideoConfiguration:
-    def __init__(self, thresh, frame_bitrate):
+    def __init__(self, thresh, frame_bitrate, processor):
         self.features = None
         self.prev_features = None
-        self.filter = PixelDiff(thresh=thresh)
+        self.filter = processor(thresh=thresh)
         self.frame_bitrate = frame_bitrate
         self.bb = None
 
@@ -42,10 +42,10 @@ class Evaluator:
         enc_frame = self.h264_processor_dict[bitrate][0].process_frame(frame)
         return self.h264_processor_dict[bitrate][1].process_frame(enc_frame)
 
-    def evaluate_configs(self, configs, start_frame, end_frame):
+    def evaluate_configs(self, configs, start_frame, end_frame, processor=PixelDiff):
         if len(configs) == 0:
             return []
-        video_configs = [VideoConfiguration(thresh=float(c[0]), frame_bitrate=int(c[1])) for c in configs]
+        video_configs = [VideoConfiguration(thresh=float(c[0]), frame_bitrate=int(c[1]), processor=processor) for c in configs]
         print([(c.filter.thresh, c.frame_bitrate) for c in video_configs])
         ious = [[] for _ in configs]
         # Iterate through ground truth
