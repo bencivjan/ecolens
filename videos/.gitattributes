@@ -1,0 +1,6 @@
+JH_night_10min_1920x1080.mp4 filter=lfs diff=lfs merge=lfs -text
+JH_night_1min_1920x1080.mp4 filter=lfs diff=lfs merge=lfs -text
+Alma_10min_1920x1080.mp4 filter=lfs diff=lfs merge=lfs -text
+Alma_1min_1920x1080.mp4 filter=lfs diff=lfs merge=lfs -text
+JH_10min_1920x1080.mp4 filter=lfs diff=lfs merge=lfs -text
+JH_1min_1920x1080.mp4 filter=lfs diff=lfs merge=lfs -text
